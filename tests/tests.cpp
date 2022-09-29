@@ -355,6 +355,8 @@ class EngineBasicTest : public testing::Test {
 
 class BatchWriteTest : public EngineBasicTest {};
 
+class TrasactionTest : public EngineBasicTest {};
+
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
   std::string hash_collection("unordered_collection");
@@ -2403,6 +2405,398 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
     ASSERT_EQ(engine->GetTTL("sortedkey0" + str, &got_ttl), Status::NotFound);
     ASSERT_EQ(engine->GetTTL("listkey1" + str, &got_ttl), Status::Ok);
   }
+
+  delete engine;
+}
+
+TEST_F(TrasactionTest, TransactionBasic) {
+  size_t num_threads = 32;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  int amount = num_threads;
+  int transfer_amount = 1;
+  std::vector<std::string> accounts{"Jack", "Tom"};
+  int round = 10000;
+  std::string sorted_bank{"sorted_bank"};
+  std::string hash_bank{"hash_bank"};
+
+  ASSERT_EQ(engine->SortedCreate(sorted_bank), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_bank), Status::Ok);
+
+  auto string_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->StringGet(payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->StringGet(receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->StringGet(receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->StringPut(payer, payer_balance), Status::Ok);
+          ASSERT_EQ(txn->StringPut(receiver, receiver_balance), Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(txn->StringPut(payer, payer_balance_after_transfer),
+                Status::Ok);
+      ASSERT_EQ(txn->StringPut(receiver, receiver_balance_after_transfer),
+                Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->StringGet(payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->StringGet(receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->Get(payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->Get(receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->Get(payer, &value), Status::NotFound);
+        ASSERT_EQ(engine->Get(receiver, &value), Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto sorted_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->SortedGet(sorted_bank, payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->SortedGet(sorted_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->SortedGet(sorted_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->SortedPut(sorted_bank, payer, payer_balance),
+                    Status::Ok);
+          ASSERT_EQ(txn->SortedPut(sorted_bank, receiver, receiver_balance),
+                    Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(
+          txn->SortedPut(sorted_bank, payer, payer_balance_after_transfer),
+          Status::Ok);
+      ASSERT_EQ(txn->SortedPut(sorted_bank, receiver,
+                               receiver_balance_after_transfer),
+                Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->SortedGet(sorted_bank, payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->SortedGet(sorted_bank, receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->SortedGet(sorted_bank, payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->SortedGet(sorted_bank, receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->SortedGet(sorted_bank, payer, &value),
+                  Status::NotFound);
+        ASSERT_EQ(engine->SortedGet(sorted_bank, receiver, &value),
+                  Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto hash_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->HashGet(hash_bank, payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->HashGet(hash_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->HashGet(hash_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->HashPut(hash_bank, payer, payer_balance), Status::Ok);
+          ASSERT_EQ(txn->HashPut(hash_bank, receiver, receiver_balance),
+                    Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(txn->HashPut(hash_bank, payer, payer_balance_after_transfer),
+                Status::Ok);
+      ASSERT_EQ(
+          txn->HashPut(hash_bank, receiver, receiver_balance_after_transfer),
+          Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->HashGet(hash_bank, payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->HashGet(hash_bank, receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->HashGet(hash_bank, payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->HashGet(hash_bank, receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->HashGet(hash_bank, payer, &value), Status::NotFound);
+        ASSERT_EQ(engine->HashGet(hash_bank, receiver, &value),
+                  Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto not_existed_collection_txn = [&]() {
+    std::string not_exist_collection("not_exist");
+    std::string key("key");
+    std::string val("val");
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->SortedPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->SortedDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->SortedGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+
+    ASSERT_EQ(txn->HashPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->HashDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->HashGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+  };
+
+  LaunchNThreads(num_threads, string_transfer_txn);
+  LaunchNThreads(num_threads, sorted_transfer_txn);
+  LaunchNThreads(num_threads, hash_transfer_txn);
+  std::vector<std::string> balances{2};
+  ASSERT_EQ(engine->Get(accounts[0], &balances[0]), Status::Ok);
+  ASSERT_EQ(engine->Get(accounts[1], &balances[1]), Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+  ASSERT_EQ(engine->SortedGet(sorted_bank, accounts[0], &balances[0]),
+            Status::Ok);
+  ASSERT_EQ(engine->SortedGet(sorted_bank, accounts[1], &balances[1]),
+            Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+  ASSERT_EQ(engine->HashGet(hash_bank, accounts[0], &balances[0]), Status::Ok);
+  ASSERT_EQ(engine->HashGet(hash_bank, accounts[1], &balances[1]), Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+
+  not_existed_collection_txn();
+
+  delete engine;
+}
+
+TEST_F(TrasactionTest, Conflict) {
+  configs.max_access_threads = 3;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  std::string sorted_collection{"sorted_collection"};
+  std::string hash_collection{"hash_collection"};
+  std::string key{"key"};
+  std::string val("val");
+  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+
+  Status expected_return = Status::Timeout;
+
+  auto operation_thread = [&](size_t) {
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->StringPut(key, val), expected_return);
+    ASSERT_EQ(txn->StringGet(key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->StringDelete(key), expected_return);
+    txn->Rollback();
+
+    ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), expected_return);
+    ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val),
+              expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->SortedDelete(sorted_collection, key), expected_return);
+    txn->Rollback();
+
+    ASSERT_EQ(txn->HashPut(hash_collection, key, val), expected_return);
+    ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->HashDelete(hash_collection, key), expected_return);
+    txn->Rollback();
+  };
+
+  auto txn = engine->TransactionCreate();
+  ASSERT_EQ(txn->StringPut(key, val), Status::Ok);
+  ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), Status::Ok);
+  ASSERT_EQ(txn->HashPut(hash_collection, key, val), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  std::string got_val;
+  ASSERT_EQ(txn->StringGet(key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  expected_return = Status::Ok;
+  LaunchNThreads(1, operation_thread);
+
+  expected_return = Status::Timeout;
+  ASSERT_EQ(txn->StringDelete(key), Status::Ok);
+  ASSERT_EQ(txn->SortedDelete(sorted_collection, key), Status::Ok);
+  ASSERT_EQ(txn->HashDelete(hash_collection, key), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
 
   delete engine;
 }

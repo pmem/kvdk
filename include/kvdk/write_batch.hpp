@@ -15,14 +15,15 @@ class WriteBatch {
   virtual void StringPut(std::string const& key, std::string const& value) = 0;
   virtual void StringDelete(std::string const& key) = 0;
 
-  virtual void SortedPut(std::string const& key, std::string const& field,
+  virtual void SortedPut(std::string const& collection, std::string const& key,
                          std::string const& value) = 0;
-  virtual void SortedDelete(std::string const& key,
-                            std::string const& field) = 0;
+  virtual void SortedDelete(std::string const& collection,
+                            std::string const& key) = 0;
 
-  virtual void HashPut(std::string const& key, std::string const& field,
+  virtual void HashPut(std::string const& collection, std::string const& key,
                        std::string const& value) = 0;
-  virtual void HashDelete(std::string const& key, std::string const& field) = 0;
+  virtual void HashDelete(std::string const& collection,
+                          std::string const& key) = 0;
 
   virtual void Clear() = 0;
 

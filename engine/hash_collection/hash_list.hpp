@@ -162,7 +162,7 @@ class HashList : public Collection {
 
   static bool MatchType(const DLRecord* record) {
     RecordType type = record->GetRecordType();
-    return type == RecordType::HashElem || type == RecordType::HashHeader;
+    return type == RecordType::HashElem || type == RecordType::HashRecord;
   }
 
  private:

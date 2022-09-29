@@ -35,6 +35,7 @@
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
+#include "transaction_impl.hpp"
 #include "utils/utils.hpp"
 #include "version/old_records_cleaner.hpp"
 #include "version/version_controller.hpp"
@@ -54,12 +55,12 @@ class KVEngine : public Engine {
                         const std::string& backup_log, Engine** engine_ptr,
                         const Configs& configs);
 
-  Snapshot* GetSnapshot(bool make_checkpoint) override;
+  Snapshot* GetSnapshot(bool make_checkpoint) final;
 
   Status Backup(const pmem::obj::string_view backup_log,
-                const Snapshot* snapshot) override;
+                const Snapshot* snapshot) final;
 
-  void ReleaseSnapshot(const Snapshot* snapshot) override {
+  void ReleaseSnapshot(const Snapshot* snapshot) final {
     {
       std::lock_guard<std::mutex> lg(checkpoint_lock_);
       persist_checkpoint_->MaybeRelease(
@@ -76,38 +77,38 @@ class KVEngine : public Engine {
   // 1. Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
   // 2. Expire is not compatible with checkpoint for now
-  Status Expire(const StringView str, TTLType ttl_time) override;
+  Status Expire(const StringView str, TTLType ttl_time) final;
   // Get time to expire of str
   //
   // Notice:
   // Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
-  Status GetTTL(const StringView str, TTLType* ttl_time) override;
+  Status GetTTL(const StringView str, TTLType* ttl_time) final;
 
   Status TypeOf(StringView key, ValueType* type) final;
 
   // String
-  Status Get(const StringView key, std::string* value) override;
+  Status Get(const StringView key, std::string* value) final;
   Status Put(const StringView key, const StringView value,
-             const WriteOptions& write_options) override;
-  Status Delete(const StringView key) override;
+             const WriteOptions& write_options) final;
+  Status Delete(const StringView key) final;
   Status Modify(const StringView key, ModifyFunc modify_func, void* modify_args,
-                const WriteOptions& options) override;
+                const WriteOptions& options) final;
 
   // Sorted
   Status SortedCreate(const StringView collection_name,
-                      const SortedCollectionConfigs& configs) override;
-  Status SortedDestroy(const StringView collection_name) override;
-  Status SortedSize(const StringView collection, size_t* size) override;
+                      const SortedCollectionConfigs& configs) final;
+  Status SortedDestroy(const StringView collection_name) final;
+  Status SortedSize(const StringView collection, size_t* size) final;
   Status SortedGet(const StringView collection, const StringView user_key,
-                   std::string* value) override;
+                   std::string* value) final;
   Status SortedPut(const StringView collection, const StringView user_key,
-                   const StringView value) override;
+                   const StringView value) final;
   Status SortedDelete(const StringView collection,
-                      const StringView user_key) override;
+                      const StringView user_key) final;
   SortedIterator* SortedIteratorCreate(const StringView collection,
-                                       Snapshot* snapshot, Status* s) override;
-  void SortedIteratorRelease(SortedIterator* sorted_iterator) override;
+                                       Snapshot* snapshot, Status* s) final;
+  void SortedIteratorRelease(SortedIterator* sorted_iterator) final;
 
   // List
   Status ListCreate(StringView key) final;
@@ -172,6 +173,20 @@ class KVEngine : public Engine {
   std::unique_ptr<WriteBatch> WriteBatchCreate() final {
     return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
+
+  std::unique_ptr<Transaction> TransactionCreate() final {
+    return std::unique_ptr<Transaction>(new TransactionImpl(this));
+  }
+
+  // Call this function before doing collection related transaction to avoid
+  // collection be destroyed during transaction
+  std::unique_ptr<CollectionTransactionCV::TransactionToken>
+  AcquireCollectionTransactionLock() {
+    return std::unique_ptr<CollectionTransactionCV::TransactionToken>(
+        new CollectionTransactionCV::TransactionToken(&ct_cv_));
+  }
+
+  Status CommitTransaction(TransactionImpl* txn);
 
   // For test cases
   const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
@@ -325,6 +340,14 @@ class KVEngine : public Engine {
     hash_table_->Insert(ret, type, status, addr, pointerType(type));
   }
 
+  // Call this function before create or destroy a collection to avoid
+  // collection be destroyed during a related transaction
+  std::unique_ptr<CollectionTransactionCV::CollectionToken>
+  acquireCollectionCreateOrDestroyLock() {
+    return std::unique_ptr<CollectionTransactionCV::CollectionToken>(
+        new CollectionTransactionCV::CollectionToken(&ct_cv_));
+  }
+
   template <typename CollectionType>
   static constexpr RecordType collectionType() {
     static_assert(std::is_same<CollectionType, Skiplist>::value ||
@@ -332,11 +355,11 @@ class KVEngine : public Engine {
                       std::is_same<CollectionType, HashList>::value,
                   "Invalid type!");
     return std::is_same<CollectionType, Skiplist>::value
-               ? RecordType::SortedHeader
+               ? RecordType::SortedRecord
                : std::is_same<CollectionType, List>::value
-                     ? RecordType::ListHeader
+                     ? RecordType::ListRecord
                      : std::is_same<CollectionType, HashList>::value
-                           ? RecordType::HashHeader
+                           ? RecordType::HashRecord
                            : RecordType::Empty;
   }
 
@@ -352,13 +375,13 @@ class KVEngine : public Engine {
         kvdk_assert(false, "Not supported!");
         return PointerType::Invalid;
       }
-      case RecordType::SortedHeader: {
+      case RecordType::SortedRecord: {
         return PointerType::Skiplist;
       }
-      case RecordType::ListHeader: {
+      case RecordType::ListRecord: {
         return PointerType::List;
       }
-      case RecordType::HashHeader: {
+      case RecordType::HashRecord: {
         return PointerType::HashList;
       }
       case RecordType::HashElem: {
@@ -429,7 +452,7 @@ class KVEngine : public Engine {
 
   Status persistOrRecoverImmutableConfigs();
 
-  Status batchWriteImpl(WriteBatchImpl const& batch);
+  Status batchWriteImpl(WriteBatchImpl const& batch, bool lock_key);
 
   Status batchWriteRollbackLogs();
 
@@ -652,6 +675,7 @@ class KVEngine : public Engine {
 
   std::atomic<int64_t> round_robin_id_{0};
 
+  CollectionTransactionCV ct_cv_;
   // We manually allocate recovery thread id for no conflict in multi-thread
   // recovering
   // Todo: do not hard code

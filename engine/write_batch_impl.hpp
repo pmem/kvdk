@@ -14,8 +14,6 @@
 
 namespace KVDK_NAMESPACE {
 
-struct Splice;
-
 class WriteBatchImpl final : public WriteBatch {
  public:
   struct StringOp {
@@ -71,30 +69,65 @@ class WriteBatchImpl final : public WriteBatch {
     string_ops_.insert(op);
   }
 
-  void SortedPut(std::string const& key, std::string const& field,
+  void SortedPut(std::string const& collection, std::string const& key,
                  std::string const& value) final {
-    SortedOp op{WriteOp::Put, key, field, value};
+    SortedOp op{WriteOp::Put, collection, key, value};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void SortedDelete(std::string const& key, std::string const& field) final {
-    SortedOp op{WriteOp::Delete, key, field, std::string{}};
+  void SortedDelete(std::string const& collection,
+                    std::string const& key) final {
+    SortedOp op{WriteOp::Delete, collection, key, std::string{}};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void HashPut(std::string const& key, std::string const& field,
+  void HashPut(std::string const& collection, std::string const& key,
                std::string const& value) final {
-    HashOp op{WriteOp::Put, key, field, value};
+    HashOp op{WriteOp::Put, collection, key, value};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
   }
 
-  void HashDelete(std::string const& key, std::string const& field) final {
-    HashOp op{WriteOp::Delete, key, field, std::string{}};
+  void HashDelete(std::string const& collection, std::string const& key) final {
+    HashOp op{WriteOp::Delete, collection, key, std::string{}};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
+  }
+
+  // Get a string op from this batch
+  // if key not exist in this batch, return nullptr
+  const StringOp* StringGet(std::string const& key) {
+    StringOp op{WriteOp::Put, key, ""};
+    auto iter = string_ops_.find(op);
+    if (iter == string_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a sorted op from this batch
+  // if collection key not exist in this batch, return nullptr
+  const SortedOp* SortedGet(const std::string& collection,
+                            const std::string& key) {
+    SortedOp op{WriteOp::Put, collection, key, ""};
+    auto iter = sorted_ops_.find(op);
+    if (iter == sorted_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a hash op from this batch
+  // if the collection key not exist in this batch, return nullptr
+  const HashOp* HashGet(std::string const& collection, std::string const& key) {
+    HashOp op{WriteOp::Put, collection, key, ""};
+    auto iter = hash_ops_.find(op);
+    if (iter == hash_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
   }
 
   void Clear() final {

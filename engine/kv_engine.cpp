@@ -246,11 +246,11 @@ Status KVEngine::restoreData() {
 
     switch (data_entry_cached.meta.type) {
       case RecordType::SortedElem:
-      case RecordType::SortedHeader:
+      case RecordType::SortedRecord:
       case RecordType::String:
-      case RecordType::HashHeader:
+      case RecordType::HashRecord:
       case RecordType::HashElem:
-      case RecordType::ListHeader:
+      case RecordType::ListRecord:
       case RecordType::ListElem: {
         if (data_entry_cached.meta.status == RecordStatus::Dirty) {
           data_entry_cached.meta.type = RecordType::Empty;
@@ -301,7 +301,7 @@ Status KVEngine::restoreData() {
         s = restoreSortedElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::SortedHeader: {
+      case RecordType::SortedRecord: {
         s = restoreSortedHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -311,7 +311,7 @@ Status KVEngine::restoreData() {
             data_entry_cached);
         break;
       }
-      case RecordType::ListHeader: {
+      case RecordType::ListRecord: {
         s = listRestoreList(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -319,7 +319,7 @@ Status KVEngine::restoreData() {
         s = listRestoreElem(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
-      case RecordType::HashHeader: {
+      case RecordType::HashRecord: {
         s = restoreHashHeader(static_cast<DLRecord*>(recovering_pmem_record));
         break;
       }
@@ -350,11 +350,11 @@ bool KVEngine::validateRecord(void* data_record) {
     case RecordType::String: {
       return static_cast<StringRecord*>(data_record)->Validate();
     }
-    case RecordType::SortedHeader:
+    case RecordType::SortedRecord:
     case RecordType::SortedElem:
-    case RecordType::HashHeader:
+    case RecordType::HashRecord:
     case RecordType::HashElem:
-    case RecordType::ListHeader:
+    case RecordType::ListRecord:
     case RecordType::ListElem: {
       return static_cast<DLRecord*>(data_record)->Validate();
     }
@@ -422,7 +422,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           break;
         }
-        case RecordType::SortedHeader: {
+        case RecordType::SortedRecord: {
           DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
@@ -430,7 +430,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordType::SortedHeader, header->Key(),
+            s = backup.Append(RecordType::SortedRecord, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append skiplist elems following the header
@@ -452,7 +452,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           break;
         }
-        case RecordType::HashHeader: {
+        case RecordType::HashRecord: {
           DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
@@ -460,7 +460,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordType::HashHeader, header->Key(),
+            s = backup.Append(RecordType::HashRecord, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header
@@ -481,7 +481,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           break;
         }
-        case RecordType::ListHeader: {
+        case RecordType::ListRecord: {
           DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
           while (header != nullptr && header->GetTimestamp() > backup_ts) {
             header =
@@ -489,7 +489,7 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
           }
           if (header && header->GetRecordStatus() == RecordStatus::Normal &&
               !header->HasExpired()) {
-            s = backup.Append(RecordType::ListHeader, header->Key(),
+            s = backup.Append(RecordType::ListRecord, header->Key(),
                               header->Value(), header->GetExpireTime());
             if (s == Status::Ok) {
               // Append hlist elems following the header
@@ -572,7 +572,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         iter->Next();
         break;
       }
-      case RecordType::SortedHeader: {
+      case RecordType::SortedRecord: {
         // Maybe reuse id?
         std::shared_ptr<Skiplist> skiplist = nullptr;
         if (!expired) {
@@ -612,7 +612,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
-      case RecordType::HashHeader: {
+      case RecordType::HashRecord: {
         std::shared_ptr<HashList> hlist = nullptr;
         if (!expired) {
           s = buildHashlist(record.key, hlist);
@@ -645,7 +645,7 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
         }
         break;
       }
-      case RecordType::ListHeader: {
+      case RecordType::ListRecord: {
         std::shared_ptr<List> list = nullptr;
         if (!expired) {
           s = buildList(record.key, list);
@@ -890,16 +890,23 @@ Status KVEngine::maybeInitBatchLogFile() {
 }
 
 Status KVEngine::BatchWrite(std::unique_ptr<WriteBatch> const& batch) {
-  WriteBatchImpl const* batch_impl =
-      dynamic_cast<WriteBatchImpl const*>(batch.get());
+  const WriteBatchImpl* batch_impl =
+      dynamic_cast<const WriteBatchImpl*>(batch.get());
   if (batch_impl == nullptr) {
     return Status::InvalidArgument;
   }
 
-  return batchWriteImpl(*batch_impl);
+  return batchWriteImpl(*batch_impl, true);
 }
 
-Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
+Status KVEngine::CommitTransaction(TransactionImpl* txn) {
+  const WriteBatchImpl* batch = txn->GetBatch();
+  kvdk_assert(batch != nullptr, "");
+  return batchWriteImpl(*batch,
+                        false /* key should already been locked by txn */);
+}
+
+Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch, bool lock_key) {
   if (batch.Size() > BatchWriteLog::Capacity()) {
     return Status::InvalidBatchSize;
   }
@@ -928,7 +935,7 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Lookup Skiplists and Hashes for further operations
   for (auto const& sorted_op : batch.SortedOps()) {
-    auto res = lookupKey<false>(sorted_op.collection, RecordType::SortedHeader);
+    auto res = lookupKey<false>(sorted_op.collection, RecordType::SortedRecord);
     /// TODO: this is a temporary work-around
     /// We cannot lock both key and field, which may trigger deadlock.
     /// However, if a collection is created and a field is inserted,
@@ -957,14 +964,16 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
 
   // Keys/internal keys to be locked on HashTable
   std::vector<std::string> keys_to_lock;
-  for (auto const& string_op : batch.StringOps()) {
-    keys_to_lock.push_back(string_op.key);
-  }
-  for (auto const& arg : sorted_args) {
-    keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
-  }
-  for (auto const& arg : hash_args) {
-    keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
+  if (lock_key) {
+    for (auto const& string_op : batch.StringOps()) {
+      keys_to_lock.push_back(string_op.key);
+    }
+    for (auto const& arg : sorted_args) {
+      keys_to_lock.push_back(arg.skiplist->InternalKey(arg.key));
+    }
+    for (auto const& arg : hash_args) {
+      keys_to_lock.push_back(arg.hlist->InternalKey(arg.key));
+    }
   }
 
   auto guard = hash_table_->RangeLock(keys_to_lock);
@@ -1383,17 +1392,17 @@ HashTable::LookupResult KVEngine::lookupKey(StringView key, uint8_t type_mask) {
                        : Status::Ok;
         break;
       }
-      case RecordType::SortedHeader:
+      case RecordType::SortedRecord:
         result.s = result.entry.GetIndex().skiplist->HasExpired()
                        ? Status::Outdated
                        : Status::Ok;
 
         break;
-      case RecordType::ListHeader:
+      case RecordType::ListRecord:
         result.s = result.entry.GetIndex().list->HasExpired() ? Status::Outdated
                                                               : Status::Ok;
         break;
-      case RecordType::HashHeader: {
+      case RecordType::HashRecord: {
         result.s = result.entry.GetIndex().hlist->HasExpired()
                        ? Status::Outdated
                        : Status::Ok;

@@ -50,6 +50,7 @@ endif()
 set(SOURCES
         engine/c/kvdk_basic_op.cpp
         engine/c/kvdk_batch.cpp
+        engine/c/kvdk_transaction.cpp
         engine/c/kvdk_hash.cpp
         engine/c/kvdk_list.cpp
         engine/c/kvdk_sorted.cpp
@@ -70,6 +71,7 @@ set(SOURCES
         engine/hash_collection/hash_list.cpp
         engine/list_collection/list.cpp
         engine/write_batch_impl.cpp
+        engine/transaction_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
