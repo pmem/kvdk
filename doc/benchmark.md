@@ -20,7 +20,7 @@ Explanation of arguments:
 
     -space: PMem space that allocate to the KVDK instance.
 
-    -max_access_threads: Max concurrent access threads of the KVDK instance, set it to the number of the hyper-threads for performance consideration.
+    -max_access_threads: Max concurrent access threads in the KVDK instance, set it to the number of the hyper-threads for performance consideration. You can call KVDK API with any number of threads, but if your parallel threads more than max_access_threads, the performance will be degraded due to synchronization cost
 
     -type: Type of key-value pairs to benchmark, it can be "string", "hash" or "sorted".
 
