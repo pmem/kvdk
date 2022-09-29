@@ -100,20 +100,18 @@ class TransactionImpl final : public Transaction {
  public:
   TransactionImpl(KVEngine* engine);
   ~TransactionImpl() final;
-  Status StringPut(const std::string& key, const std::string& value) final;
-  Status StringDelete(const std::string& key) final;
-  Status StringGet(const std::string& key, std::string* value) final;
-  Status SortedPut(const std::string& collection, const std::string& key,
-                   const std::string& value) final;
-  Status SortedDelete(const std::string& collection,
-                      const std::string& key) final;
-  Status SortedGet(const std::string& collection, const std::string& key,
+  Status StringPut(const StringView key, const StringView value) final;
+  Status StringDelete(const StringView key) final;
+  Status StringGet(const StringView key, std::string* value) final;
+  Status SortedPut(const StringView collection, const StringView key,
+                   const StringView value) final;
+  Status SortedDelete(const StringView collection, const StringView key) final;
+  Status SortedGet(const StringView collection, const StringView key,
                    std::string* value) final;
-  Status HashPut(const std::string& collection, const std::string& key,
-                 const std::string& value) final;
-  Status HashDelete(const std::string& collection,
-                    const std::string& key) final;
-  Status HashGet(const std::string& collection, const std::string& key,
+  Status HashPut(const StringView collection, const StringView key,
+                 const StringView value) final;
+  Status HashDelete(const StringView collection, const StringView key) final;
+  Status HashGet(const StringView collection, const StringView key,
                  std::string* value) final;
   Status Commit() final;
   void Rollback() final;

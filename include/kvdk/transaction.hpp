@@ -12,22 +12,20 @@ namespace KVDK_NAMESPACE {
 class Transaction {
  public:
   // TODO: use StringView instead of std::string
-  virtual Status StringPut(const std::string& key,
-                           const std::string& value) = 0;
-  virtual Status StringDelete(const std::string& key) = 0;
-  virtual Status StringGet(const std::string& key, std::string* value) = 0;
-  virtual Status SortedPut(const std::string& collection,
-                           const std::string& key,
-                           const std::string& value) = 0;
-  virtual Status SortedDelete(const std::string& collection,
-                              const std::string& key) = 0;
-  virtual Status SortedGet(const std::string& collection,
-                           const std::string& key, std::string* value) = 0;
-  virtual Status HashPut(const std::string& collection, const std::string& key,
-                         const std::string& value) = 0;
-  virtual Status HashDelete(const std::string& collection,
-                            const std::string& key) = 0;
-  virtual Status HashGet(const std::string& collection, const std::string& key,
+  virtual Status StringPut(const StringView key, const StringView value) = 0;
+  virtual Status StringDelete(const StringView key) = 0;
+  virtual Status StringGet(const StringView key, std::string* value) = 0;
+  virtual Status SortedPut(const StringView collection, const StringView key,
+                           const StringView value) = 0;
+  virtual Status SortedDelete(const StringView collection,
+                              const StringView key) = 0;
+  virtual Status SortedGet(const StringView collection, const StringView key,
+                           std::string* value) = 0;
+  virtual Status HashPut(const StringView collection, const StringView key,
+                         const StringView value) = 0;
+  virtual Status HashDelete(const StringView collection,
+                            const StringView key) = 0;
+  virtual Status HashGet(const StringView collection, const StringView key,
                          std::string* value) = 0;
 
   virtual Status Commit() = 0;

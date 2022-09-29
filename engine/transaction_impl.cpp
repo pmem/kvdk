@@ -23,8 +23,8 @@ TransactionImpl::TransactionImpl(KVEngine* engine)
 
 TransactionImpl::~TransactionImpl() { Rollback(); }
 
-Status TransactionImpl::StringPut(const std::string& key,
-                                  const std::string& value) {
+Status TransactionImpl::StringPut(const StringView key,
+                                  const StringView value) {
   auto hash_table = engine_->GetHashTable();
   if (!tryLock(hash_table->GetLock(key))) {
     status_ = Status::Timeout;
@@ -35,7 +35,7 @@ Status TransactionImpl::StringPut(const std::string& key,
   return Status::Ok;
 }
 
-Status TransactionImpl::StringDelete(const std::string& key) {
+Status TransactionImpl::StringDelete(const StringView key) {
   auto hash_table = engine_->GetHashTable();
   if (!tryLock(hash_table->GetLock(key))) {
     status_ = Status::Timeout;
@@ -46,7 +46,7 @@ Status TransactionImpl::StringDelete(const std::string& key) {
   return Status::Ok;
 }
 
-Status TransactionImpl::StringGet(const std::string& key, std::string* value) {
+Status TransactionImpl::StringGet(const StringView key, std::string* value) {
   auto op = batch_->StringGet(key);
   if (op != nullptr) {
     if (op->op == WriteOp::Delete) {
@@ -65,9 +65,9 @@ Status TransactionImpl::StringGet(const std::string& key, std::string* value) {
   }
 }
 
-Status TransactionImpl::SortedPut(const std::string& collection,
-                                  const std::string& key,
-                                  const std::string& value) {
+Status TransactionImpl::SortedPut(const StringView collection,
+                                  const StringView key,
+                                  const StringView value) {
   acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
   auto lookup_result =
@@ -87,8 +87,8 @@ Status TransactionImpl::SortedPut(const std::string& collection,
   return Status::Ok;
 }
 
-Status TransactionImpl::SortedDelete(const std::string& collection,
-                                     const std::string& key) {
+Status TransactionImpl::SortedDelete(const StringView collection,
+                                     const StringView key) {
   acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
   auto lookup_result =
@@ -108,8 +108,8 @@ Status TransactionImpl::SortedDelete(const std::string& collection,
   return Status::Ok;
 }
 
-Status TransactionImpl::SortedGet(const std::string& collection,
-                                  const std::string& key, std::string* value) {
+Status TransactionImpl::SortedGet(const StringView collection,
+                                  const StringView key, std::string* value) {
   auto op = batch_->SortedGet(collection, key);
   if (op != nullptr) {
     if (op->op == WriteOp::Delete) {
@@ -138,9 +138,8 @@ Status TransactionImpl::SortedGet(const std::string& collection,
   }
 }
 
-Status TransactionImpl::HashPut(const std::string& collection,
-                                const std::string& key,
-                                const std::string& value) {
+Status TransactionImpl::HashPut(const StringView collection,
+                                const StringView key, const StringView value) {
   acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
   auto lookup_result =
@@ -160,8 +159,8 @@ Status TransactionImpl::HashPut(const std::string& collection,
   return Status::Ok;
 }
 
-Status TransactionImpl::HashDelete(const std::string& collection,
-                                   const std::string& key) {
+Status TransactionImpl::HashDelete(const StringView collection,
+                                   const StringView key) {
   acquireCollectionTransaction();
   auto hash_table = engine_->GetHashTable();
   auto lookup_result =
@@ -181,8 +180,8 @@ Status TransactionImpl::HashDelete(const std::string& collection,
   return Status::Ok;
 }
 
-Status TransactionImpl::HashGet(const std::string& collection,
-                                const std::string& key, std::string* value) {
+Status TransactionImpl::HashGet(const StringView collection,
+                                const StringView key, std::string* value) {
   auto op = batch_->HashGet(collection, key);
   if (op != nullptr) {
     if (op->op == WriteOp::Delete) {

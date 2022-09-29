@@ -32,7 +32,7 @@ class Engine {
   // Return Status::Ok on sucess, return other status for any error
   //
   // To close the instance, just delete *engine_ptr.
-  static Status Open(const std::string& engine_path, Engine** engine_ptr,
+  static Status Open(const StringView engine_path, Engine** engine_ptr,
                      const Configs& configs, FILE* log_file = stdout);
 
   // Restore a KVDK instance from a backup log file.
@@ -49,8 +49,8 @@ class Engine {
   //
   // Notice:
   // "engine_path" should be an empty dir
-  static Status Restore(const std::string& engine_path,
-                        const std::string& backup_log, Engine** engine_ptr,
+  static Status Restore(const StringView engine_path,
+                        const StringView backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
 
   virtual Status TypeOf(StringView key, ValueType* type) = 0;

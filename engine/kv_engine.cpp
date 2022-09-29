@@ -57,11 +57,13 @@ KVEngine::~KVEngine() {
   GlobalLogger.Info("Instance closed\n");
 }
 
-Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
+Status KVEngine::Open(const StringView engine_path, Engine** engine_ptr,
                       const Configs& configs) {
-  GlobalLogger.Info("Opening kvdk instance from %s ...\n", name.c_str());
+  std::string engine_path_str(string_view_2_string(engine_path));
+  GlobalLogger.Info("Opening kvdk instance from %s ...\n",
+                    engine_path_str.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->init(name, configs);
+  Status s = engine->init(engine_path_str, configs);
   if (s == Status::Ok) {
     s = engine->restoreExistingData();
   }
@@ -76,16 +78,18 @@ Status KVEngine::Open(const std::string& name, Engine** engine_ptr,
   return s;
 }
 
-Status KVEngine::Restore(const std::string& engine_path,
-                         const std::string& backup_log, Engine** engine_ptr,
+Status KVEngine::Restore(const StringView engine_path,
+                         const StringView backup_log, Engine** engine_ptr,
                          const Configs& configs) {
+  std::string engine_path_str(string_view_2_string(engine_path));
+  std::string backup_log_str(string_view_2_string(backup_log));
   GlobalLogger.Info(
       "Restoring kvdk instance from backup log %s to engine path %s\n",
-      backup_log.c_str(), engine_path.c_str());
+      backup_log_str.c_str(), engine_path_str.c_str());
   KVEngine* engine = new KVEngine(configs);
-  Status s = engine->init(engine_path, configs);
+  Status s = engine->init(engine_path_str, configs);
   if (s == Status::Ok) {
-    s = engine->restoreDataFromBackup(backup_log);
+    s = engine->restoreDataFromBackup(backup_log_str);
   }
 
   if (s == Status::Ok) {
@@ -94,7 +98,7 @@ Status KVEngine::Restore(const std::string& engine_path,
     engine->ReportPMemUsage();
   } else {
     GlobalLogger.Error("Restore kvdk instance from backup log %s failed: %d\n",
-                       backup_log.c_str(), s);
+                       backup_log_str.c_str(), s);
     delete engine;
   }
   return s;
@@ -158,12 +162,12 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
       return Status::IOError;
     }
 
-    db_file_ = data_file();
+    data_file_ = data_file();
     configs_ = configs;
 
   } else {
     configs_ = configs;
-    db_file_ = name;
+    data_file_ = name;
 
     // The devdax mode need to execute the shell scripts/init_devdax.sh,
     // then a fsdax model namespace will be created and the
@@ -185,7 +189,7 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   }
 
   pmem_allocator_.reset(PMEMAllocator::NewPMEMAllocator(
-      db_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
+      data_file_, configs_.pmem_file_size, configs_.pmem_segment_blocks,
       configs_.pmem_block_size, configs_.max_access_threads,
       configs_.populate_pmem_space, configs_.use_devdax_mode,
       &version_controller_));
