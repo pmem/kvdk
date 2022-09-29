@@ -127,6 +127,10 @@ In current version, performance of operations on hash collection is similar to s
 
 List is a list of string elements, you can access elems at the front or back via ListPushFront, ListPushBack, ListPopFron, ListPopBack, or operation elems with index via ListInsertAt, ListInsertBefore, ListInsertAfter and ListErase. Notice that operation with index take O(n) time, while operation on front and back only takes O(1).
 
+### Namespace
+
+Each collection has its own namespace, so you can store same key in every collection. Howevery, collection name and raw string key are in a same namespace, so you can't assign same name for a collection and a string key, otherwise a error status (Status::WrongType) will be returned.
+
 ## API Examples
 
 ### Reads and Writes with String type
