@@ -23,7 +23,7 @@ class Engine {
  public:
   // Open a new KVDK instance or restore a existing KVDK instance
   //
-  // Para:
+  // Args:
   // * engine_path: indicates the dir path that persist the instance
   // * engine_ptr: store the pointer to restored instance
   // * configs: engine configs4
@@ -38,7 +38,7 @@ class Engine {
 
   // Restore a KVDK instance from a backup log file.
   //
-  // Para:
+  // Args:
   // * engine_path: indicates the dir path that persist the instance
   // * backup_log: the backup log file restored from
   // * engine_ptr: store the pointer to restored instance
@@ -56,14 +56,36 @@ class Engine {
 
   virtual Status TypeOf(StringView key, ValueType* type) = 0;
 
-  // Insert a STRING-type KV to set "key" to hold "value", return Ok on
-  // successful persistence, return non-Ok on any error.
+  // Insert a STRING-type KV to set "key" to hold "value".
+  //
+  // Args:
+  // *options: customized write options
+  //
+  // Return:
+  // Status Ok on success .
+  // Status::WrongType if key exists but is a collection.
+  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted.
   virtual Status Put(const StringView key, const StringView value,
                      const WriteOptions& options = WriteOptions()) = 0;
 
+  // Search the STRING-type KV of "key" in the kvdk instance.
+  //
+  // Return:
+  // Return Status::Ok and store the corresponding value to *value on success.
+  // Return Status::NotFound if the "key" does not exist.
+  virtual Status Get(const StringView key, std::string* value) = 0;
+
+  // Remove STRING-type KV of "key".
+  //
+  // Return:
+  // Status::Ok on success or the "key" did not exist
+  // Status::WrongType if key exists but is a collection type
+  // Status::PMemOverflow if PMem exhausted
+  virtual Status Delete(const StringView key) = 0;
+
   // Modify value of existing key in the engine
   //
-  // Para:
+  // Args:
   // * modify_func: customized function to modify existing value of key. See
   // definition of ModifyFunc (types.hpp) for more details.
   // * modify_args: customized arguments of modify_func.
@@ -76,8 +98,21 @@ class Engine {
                         void* modify_args,
                         const WriteOptions& options = WriteOptions()) = 0;
 
+  // Atomically do a batch of operations (Put or Delete) to the instance, these
+  // operations either all succeed, or all fail. The data will be rollbacked if
+  // the instance crash during a batch write
+  //
+  // Return:
+  // Status::Ok on success
+  // Status::NotFound if a collection operated by the batch does not exist
+  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted
+  //
+  // Notice:
+  // BatchWrite has no isolation guaranteed, if you need it, you should use
+  // Transaction API
   virtual Status BatchWrite(std::unique_ptr<WriteBatch> const& batch) = 0;
 
+  // Create a write batch for BatchWrite operation
   virtual std::unique_ptr<WriteBatch> WriteBatchCreate() = 0;
 
   // Start a transaction on the kvdk instance.
@@ -99,16 +134,10 @@ class Engine {
   // it holds.
   virtual std::unique_ptr<Transaction> TransactionCreate() = 0;
 
-  // Search the STRING-type KV of "key" in the kvdk instance
-  // Return:
-  // Return Status::Ok and store the corresponding value to *value on success.
-  // Return Status::NotFound if the "key" does not exist.
-  virtual Status Get(const StringView key, std::string* value) = 0;
-
   // Search the STRING-type or Collection and get the corresponding expired
   // time to *expired_time on success.
   //
-  // Para:
+  // Args:
   // * key: STRING-type key or collection name to search.
   // * ttl_time: store TTL result.
   //
@@ -119,7 +148,7 @@ class Engine {
 
   // Set ttl_time for STRING-type or Collection type data
   //
-  // Para:
+  // Args:
   // * key: STRING-type key or collection name to set ttl_time.
   // * ttl_time: ttl time to set. if ttl_time == kPersistTTL, the name will not
   // be expired. If ttl_time <=0, the name is expired immediately.
@@ -129,18 +158,10 @@ class Engine {
   // Status::NotFound if key does not exist.
   virtual Status Expire(const StringView key, int64_t ttl_time) = 0;
 
-  // Remove STRING-type KV of "key".
-  //
-  // Return:
-  // Status::Ok on success or the "key" did not exist
-  // Status::WrongType if key exists but is a collection type
-  // Status::PMemOverflow if PMem exhausted.
-  virtual Status Delete(const StringView key) = 0;
-
   // Create a empty sorted collection with configs. You should always create
   // collection before you do any operations on it
   //
-  // Para:
+  // Args:
   // * configs: customized config of creating collection
   //
   // Return:
@@ -347,7 +368,7 @@ class Engine {
   // Create a KV iterator on list "list", which is able to iterate all elems in
   // the list
   //
-  // Para:
+  // Args:
   // * snapshot: iterator will iterate all elems a t "snapshot" version, if
   // snapshot is nullptr, then a internal snapshot will be created at current
   // version and the iterator will be created on it
@@ -423,7 +444,7 @@ class Engine {
 
   // Modify value of a existing key in a hash collection
   //
-  // Para:
+  // Args:
   // * modify_func: customized function to modify existing value of key. See
   // definition of ModifyFunc (types.hpp) for more details.
   // * modify_args: customized arguments of modify_func.
@@ -472,7 +493,7 @@ class Engine {
   // Create a KV iterator on sorted collection "collection", which is able to
   // sequentially iterate all KVs in the "collection".
   //
-  // Para:
+  // Args:
   // * snapshot: iterator will iterate all elems a t "snapshot" version, if
   // snapshot is nullptr, then a internal snapshot will be created at current
   // version and the iterator will be created on it
@@ -496,8 +517,9 @@ class Engine {
 
   // Register a customized comparator to the engine on runtime
   //
-  // Return true on success, return false if a comparator of comparator_name
-  // already existed
+  // Return:
+  // Return true on success
+  // Return false if a comparator of comparator_name already existed
   virtual bool registerComparator(const StringView& comparator_name,
                                   Comparator) = 0;
 
