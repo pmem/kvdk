@@ -7,15 +7,15 @@
 #include "kv_engine.hpp"
 
 namespace KVDK_NAMESPACE {
-Status Engine::Open(const std::string& name, Engine** engine_ptr,
+Status Engine::Open(const StringView name, Engine** engine_ptr,
                     const Configs& configs, FILE* log_file) {
   GlobalLogger.Init(log_file, configs.log_level);
   Status s = KVEngine::Open(name, engine_ptr, configs);
   return s;
 }
 
-Status Engine::Restore(const std::string& engine_path,
-                       const std::string& backup_file, Engine** engine_ptr,
+Status Engine::Restore(const StringView engine_path,
+                       const StringView backup_file, Engine** engine_ptr,
                        const Configs& configs, FILE* log_file) {
   GlobalLogger.Init(log_file, configs.log_level);
   Status s = KVEngine::Restore(engine_path, backup_file, engine_ptr, configs);
