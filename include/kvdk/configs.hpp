@@ -28,6 +28,8 @@ struct SortedCollectionConfigs {
 };
 
 struct Configs {
+  // TODO: rename to concurrent internal threads
+  //
   // Max number of concurrent threads read/write the kvdk instance internally.
   // Set it to the number of the hyper-threads to get best performance
   //

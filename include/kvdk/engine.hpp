@@ -54,6 +54,11 @@ class Engine {
                         const StringView backup_log, Engine** engine_ptr,
                         const Configs& configs, FILE* log_file = stdout);
 
+  // Get type of key, it can be String, SortedCollection, HashCollection or List
+  //
+  // Return:
+  // Status::Ok and store type to "*type" on success
+  // Status::NotFound if key does not exist
   virtual Status TypeOf(StringView key, ValueType* type) = 0;
 
   // Insert a STRING-type KV to set "key" to hold "value".

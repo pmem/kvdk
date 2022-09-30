@@ -1266,7 +1266,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
   if (res.s == Status::Ok) {
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::Skiplist: {
-        *type = ValueType::SortedSet;
+        *type = ValueType::SortedCollection;
         break;
       }
       case PointerType::List: {
@@ -1274,7 +1274,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
         break;
       }
       case PointerType::HashList: {
-        *type = ValueType::HashSet;
+        *type = ValueType::HashCollection;
         break;
       }
       case PointerType::StringRecord: {
