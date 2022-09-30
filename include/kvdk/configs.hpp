@@ -19,9 +19,6 @@ enum class LogLevel : uint8_t {
   None,
 };
 
-// A snapshot indicates a immutable view of a KVDK engine at a certain time
-struct Snapshot {};
-
 // Configs of created sorted collection
 // For correctness of encoding, please add new config field in the end of the
 // existing fields

@@ -10,6 +10,7 @@
 #include "comparator.hpp"
 #include "configs.hpp"
 #include "iterator.hpp"
+#include "snapshot.hpp"
 #include "transaction.hpp"
 #include "types.hpp"
 #include "write_batch.hpp"
