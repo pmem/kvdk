@@ -473,8 +473,8 @@ TEST_F(EngineBasicTest, TypeOfKey) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::unordered_map<std::string, ValueType> key_types;
-  for (auto type : {ValueType::String, ValueType::HashSet, ValueType::List,
-                    ValueType::SortedSet}) {
+  for (auto type : {ValueType::String, ValueType::HashCollection,
+                    ValueType::List, ValueType::SortedCollection}) {
     std::string key = KVDKValueTypeString[type];
     key_types[key] = type;
     ValueType type_resp;
@@ -483,7 +483,7 @@ TEST_F(EngineBasicTest, TypeOfKey) {
         ASSERT_EQ(engine->Put(key, ""), Status::Ok);
         break;
       }
-      case ValueType::HashSet: {
+      case ValueType::HashCollection: {
         ASSERT_EQ(engine->HashCreate(key), Status::Ok);
         break;
       }
@@ -491,7 +491,7 @@ TEST_F(EngineBasicTest, TypeOfKey) {
         ASSERT_EQ(engine->ListCreate(key), Status::Ok);
         break;
       }
-      case ValueType::SortedSet: {
+      case ValueType::SortedCollection: {
         ASSERT_EQ(engine->SortedCreate(key), Status::Ok);
         break;
       }

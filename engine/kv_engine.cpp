@@ -1226,10 +1226,10 @@ Status KVEngine::batchWriteRollbackLogs() {
   return Status::Ok;
 }
 
-Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
+Status KVEngine::GetTTL(const StringView key, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
-  auto ul = hash_table_->AcquireLock(str);
-  auto res = lookupKey<false>(str, ExpirableRecordType);
+  auto ul = hash_table_->AcquireLock(key);
+  auto res = lookupKey<false>(key, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -1266,7 +1266,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
   if (res.s == Status::Ok) {
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::Skiplist: {
-        *type = ValueType::SortedSet;
+        *type = ValueType::SortedCollection;
         break;
       }
       case PointerType::List: {
@@ -1274,7 +1274,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
         break;
       }
       case PointerType::HashList: {
-        *type = ValueType::HashSet;
+        *type = ValueType::HashCollection;
         break;
       }
       case PointerType::StringRecord: {
@@ -1289,7 +1289,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
   return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
-Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
+Status KVEngine::Expire(const StringView key, TTLType ttl_time) {
   auto thread_holder = AcquireAccessThread();
 
   int64_t base_time = TimeUtils::millisecond_time();
@@ -1298,10 +1298,10 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
   }
 
   ExpireTimeType expired_time = TimeUtils::TTLToExpireTime(ttl_time, base_time);
-  auto ul = hash_table_->AcquireLock(str);
+  auto ul = hash_table_->AcquireLock(key);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   // TODO: maybe have a wrapper function(lookupKeyAndMayClean).
-  auto lookup_result = lookupKey<false>(str, ExpirableRecordType);
+  auto lookup_result = lookupKey<false>(key, ExpirableRecordType);
   if (lookup_result.s == Status::Outdated) {
     return Status::NotFound;
   }
@@ -1313,7 +1313,7 @@ Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
         ul.unlock();
         version_controller_.ReleaseLocalSnapshot();
         lookup_result.s = Modify(
-            str,
+            key,
             [](const std::string* old_val, std::string* new_val, void*) {
               new_val->assign(*old_val);
               return ModifyOperation::Write;
