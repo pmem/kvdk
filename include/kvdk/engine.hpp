@@ -89,11 +89,14 @@ class Engine {
   // Return:
   // Return a pointer to transaction struct for doing transactions.
   //
-  // Notice: A thread should not call normal write APIs while a transaction of
+  // Notice:
+  // 1. A thread should not call normal write APIs while a transaction of
   // it has not been committed or rollbacked, otherwise the thread may deadlock
   // as the transaction may holding locks required by normal write operations.
-  // Once the transaction is committed or rollbacked, you can start next
-  // transaction on this struct
+  // 2. Once the transaction is committed or rollbacked, you can start next
+  // transaction on this struct.
+  // 3. Commit or Rollback the transaction as soon as possible to release locks
+  // it holds.
   virtual std::unique_ptr<Transaction> TransactionCreate() = 0;
 
   // Search the STRING-type KV of "key" in the kvdk instance
