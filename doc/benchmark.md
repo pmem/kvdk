@@ -4,6 +4,15 @@ To test performance of KVDK, you can run our benchmark tool "bench", the tool is
 
 You can manually run individual benchmark follow the examples as shown bellow, or simply run our basic benchmark script "scripts/run_benchmark.py" to test all the basic read/write performance.
 
+To run the script, you shoulf first build kvdk, then run:
+
+```
+scripts/run_benchmark.py [data_type] [key distribution]
+```
+
+data_type: Which data type to benchmark, it can be string/sorted/hash/list/blackhole/all
+
+key distribution: Distribution of key of the benchmark workloads, it can be random/zipf/all
 ## Fill data to new instance
 
 To test performance, we need to first fill key-value pairs to the KVDK instance. Since KVDK did not support cross-socket access yet, we need to bind bench program to a numa node: 
