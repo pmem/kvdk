@@ -43,8 +43,8 @@ typedef void (*KVDKFreeFunc)(void*);
 
 #define KVDK_TYPES(GEN) \
   GEN(String)           \
-  GEN(SortedCollection)        \
-  GEN(HashCollection)          \
+  GEN(SortedCollection) \
+  GEN(HashCollection)   \
   GEN(List)
 
 typedef enum { KVDK_TYPES(GENERATE_ENUM) } KVDKValueType;

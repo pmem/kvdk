@@ -100,7 +100,7 @@ class Transaction {
 
   // Return status of the last transaction operation
   virtual Status InternalStatus() = 0;
-  
+
   virtual ~Transaction() = default;
 };
 }  // namespace KVDK_NAMESPACE
