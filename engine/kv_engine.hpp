@@ -77,13 +77,13 @@ class KVEngine : public Engine {
   // 1. Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
   // 2. Expire is not compatible with checkpoint for now
-  Status Expire(const StringView str, TTLType ttl_time) final;
+  Status Expire(const StringView key, TTLType ttl_time) final;
   // Get time to expire of str
   //
   // Notice:
   // Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
-  Status GetTTL(const StringView str, TTLType* ttl_time) final;
+  Status GetTTL(const StringView key, TTLType* ttl_time) final;
 
   Status TypeOf(StringView key, ValueType* type) final;
 

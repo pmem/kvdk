@@ -11,7 +11,6 @@
 namespace KVDK_NAMESPACE {
 class Transaction {
  public:
-  // TODO: use StringView instead of std::string
   virtual Status StringPut(const StringView key, const StringView value) = 0;
   virtual Status StringDelete(const StringView key) = 0;
   virtual Status StringGet(const StringView key, std::string* value) = 0;

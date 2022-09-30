@@ -1226,7 +1226,7 @@ Status KVEngine::batchWriteRollbackLogs() {
   return Status::Ok;
 }
 
-Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
+Status KVEngine::GetTTL(const StringView key, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
   auto ul = hash_table_->AcquireLock(str);
   auto res = lookupKey<false>(str, ExpirableRecordType);
@@ -1289,7 +1289,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
   return res.s == Status::Outdated ? Status::NotFound : res.s;
 }
 
-Status KVEngine::Expire(const StringView str, TTLType ttl_time) {
+Status KVEngine::Expire(const StringView key, TTLType ttl_time) {
   auto thread_holder = AcquireAccessThread();
 
   int64_t base_time = TimeUtils::millisecond_time();
