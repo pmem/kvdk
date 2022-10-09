@@ -233,13 +233,13 @@ static extent_hooks_t arena_extent_hooks = {
 };
 // clang-format on
 
-unsigned JemallocMemoryAllocator::get_arena_for_current_thread() {
+unsigned JemallocMemoryAllocator::getArenaForCurrentThread() {
   unsigned int arena_idx;
   arena_idx = hash64(get_fs_base()) & arena_mask_;
   return arena_index_[arena_idx];
 }
 
-unsigned JemallocMemoryAllocator::create_an_arena() {
+unsigned JemallocMemoryAllocator::createOneArena() {
   std::unique_lock<SpinMutex> ul(jemalloc_arena_spin);
 
   unsigned arena_index;
@@ -257,7 +257,7 @@ unsigned JemallocMemoryAllocator::create_an_arena() {
   return arena_index;
 }
 
-void JemallocMemoryAllocator::destroy_arenas() {
+void JemallocMemoryAllocator::destroyArenas() {
   if (!arenas_initialized_ || num_arenas_ == 0) {
     return;
   }
@@ -276,7 +276,7 @@ void JemallocMemoryAllocator::destroy_arenas() {
   arenas_initialized_ = false;
 }
 
-void* JemallocMemoryAllocator::je_kvdk_mallocx_check(size_t size, int flags) {
+void* JemallocMemoryAllocator::allocateWithFlags(size_t size, int flags) {
   if (KVDK_LIKELY(size)) {
     void* ptr = je_kvdk_mallocx(size, flags);
     return ptr;
@@ -284,7 +284,7 @@ void* JemallocMemoryAllocator::je_kvdk_mallocx_check(size_t size, int flags) {
   return nullptr;
 }
 
-int JemallocMemoryAllocator::check_alignment(size_t alignment) {
+int JemallocMemoryAllocator::checkAlignment(size_t alignment) {
   int err = 0;
   if ((alignment < sizeof(void*)) || (((alignment - 1) & alignment) != 0)) {
     err = 1;

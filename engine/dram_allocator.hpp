@@ -77,10 +77,10 @@ class JemallocMemoryAllocator : public Allocator {
     if (KVDK_UNLIKELY(num_arenas_ == 0)) {
       addr = je_kvdk_malloc(size);
     } else {
-      initialize_arenas();
-      unsigned arena = get_arena_for_current_thread();
-      addr = je_kvdk_mallocx_check(size,
-                                   MALLOCX_ARENA(arena) | MALLOCX_TCACHE_NONE);
+      initializeArenas();
+      unsigned arena = getArenaForCurrentThread();
+      addr =
+          allocateWithFlags(size, MALLOCX_ARENA(arena) | MALLOCX_TCACHE_NONE);
     }
 
     if (KVDK_LIKELY(addr != nullptr)) {
@@ -99,12 +99,12 @@ class JemallocMemoryAllocator : public Allocator {
     if (KVDK_UNLIKELY(num_arenas_ == 0)) {
       addr = je_kvdk_aligned_alloc(alignment, size);
     } else {
-      if (KVDK_LIKELY(check_alignment(alignment) == 0)) {
-        initialize_arenas();
-        unsigned arena = get_arena_for_current_thread();
-        addr = je_kvdk_mallocx_check(size, MALLOCX_ALIGN(alignment) |
-                                               MALLOCX_ARENA(arena) |
-                                               MALLOCX_TCACHE_NONE);
+      if (KVDK_LIKELY(checkAlignment(alignment) == 0)) {
+        initializeArenas();
+        unsigned arena = getArenaForCurrentThread();
+        addr = allocateWithFlags(size, MALLOCX_ALIGN(alignment) |
+                                           MALLOCX_ARENA(arena) |
+                                           MALLOCX_TCACHE_NONE);
       }
     }
 
@@ -140,7 +140,7 @@ class JemallocMemoryAllocator : public Allocator {
     auto ul = Allocator::AcquireLock();
 
     dest_memory_nodes_ = dest_memory_nodes;
-    set_dest_memory_nodes_mask();
+    setDestMemoryNodesMask();
   }
 
   int GetMbindMode() { return MPOL_BIND; }
@@ -148,7 +148,7 @@ class JemallocMemoryAllocator : public Allocator {
   bitmask* GetMbindNodesMask() { return dest_memory_nodes_mask_; }
 
   ~JemallocMemoryAllocator() {
-    destroy_arenas();
+    destroyArenas();
 
     if (dest_memory_nodes_mask_) {
       numa_bitmask_free(dest_memory_nodes_mask_);
@@ -166,14 +166,14 @@ class JemallocMemoryAllocator : public Allocator {
   std::string dest_memory_nodes_;
   bitmask* dest_memory_nodes_mask_ = nullptr;
 
-  unsigned create_an_arena();
-  unsigned get_arena_for_current_thread();
-  void destroy_arenas();
+  unsigned createOneArena();
+  unsigned getArenaForCurrentThread();
+  void destroyArenas();
 
-  static void* je_kvdk_mallocx_check(size_t size, int flags);
-  static int check_alignment(size_t alignment);
+  static void* allocateWithFlags(size_t size, int flags);
+  static int checkAlignment(size_t alignment);
 
-  inline void initialize_arenas() {
+  inline void initializeArenas() {
     if (KVDK_LIKELY(arenas_initialized_ || num_arenas_ == 0)) {
       return;
     }
@@ -184,14 +184,14 @@ class JemallocMemoryAllocator : public Allocator {
     }
 
     for (uint32_t i = 0; i < num_arenas_; i++) {
-      unsigned arena_index = create_an_arena();
+      unsigned arena_index = createOneArena();
       arena_index_.push_back(arena_index);
     }
 
     arenas_initialized_ = true;
   }
 
-  void set_dest_memory_nodes_mask() {
+  void setDestMemoryNodesMask() {
     if (dest_memory_nodes_mask_) {
       numa_bitmask_free(dest_memory_nodes_mask_);
       dest_memory_nodes_mask_ = nullptr;
