@@ -83,6 +83,25 @@ void Java_io_pmem_kvdk_Configs_setEnablePMem(JNIEnv*, jobject, jlong handle,
 
 /*
  * Class:     io_pmem_kvdk_Configs
+ * Method:    setDestMemoryNodes
+ * Signature: (JLjava/lang/String;)V
+ */
+void Java_io_pmem_kvdk_Configs_setDestMemoryNodes(JNIEnv* env, jobject,
+                                                  jlong handle,
+                                                  jstring jnodes) {
+  const char* nodes_chars = env->GetStringUTFChars(jnodes, nullptr);
+  if (nodes_chars == nullptr) {
+    // exception thrown: OutOfMemoryError
+    return;
+  }
+  std::string nodes_str = nodes_chars;
+  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->dest_memory_nodes =
+      nodes_str;
+  env->ReleaseStringUTFChars(jnodes, nodes_chars);
+}
+
+/*
+ * Class:     io_pmem_kvdk_Configs
  * Method:    setOptLargeSortedCollectionRecovery
  * Signature: (JZ)V
  */

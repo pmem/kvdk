@@ -33,6 +33,28 @@
 
 namespace KVDK_NAMESPACE {
 
+// Set class name of memory allocator for volatile key values.
+// Persitent key values will be allocated by PMEMAllocator if enabled.
+#ifndef KVDK_VOLATILE_KV_MEMORY_ALLOCATOR_CLASS
+#define KVDK_VOLATILE_KV_MEMORY_ALLOCATOR_CLASS SystemMemoryAllocator
+#endif
+// Enable jemalloc memory allocator for volatile key values if available.
+#ifdef KVDK_WITH_JEMALLOC
+#undef KVDK_VOLATILE_KV_MEMORY_ALLOCATOR_CLASS
+#define KVDK_VOLATILE_KV_MEMORY_ALLOCATOR_CLASS JemallocMemoryAllocator
+#endif
+
+// Set class name of memory allocator for Skiplist nodes.
+#ifndef KVDK_SKIPLIST_NODE_MEMORY_ALLOCATOR_CLASS
+#define KVDK_SKIPLIST_NODE_MEMORY_ALLOCATOR_CLASS SystemMemoryAllocator
+#endif
+
+// Set class name of memory allocator for Hash Table's new buckets.
+// HashTable's initial buckets are allocated by `global_memory_allocator`
+#ifndef KVDK_HASH_TABLE_NEW_BUCKET_MEMORY_ALLOCATOR_CLASS
+#define KVDK_HASH_TABLE_NEW_BUCKET_MEMORY_ALLOCATOR_CLASS SystemMemoryAllocator
+#endif
+
 #ifdef KVDK_WITH_PMEM
 // fsdax mode align to 2MB by default.
 constexpr uint64_t kPMEMMapSizeUnit = (1 << 21);
@@ -618,6 +640,7 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
         configs_.pmem_block_size, configs_.max_access_threads,
         configs_.populate_pmem_space, configs_.use_devdax_mode,
         &version_controller_));
+    kv_allocator_->SetMaxAccessThreads(configs_.max_access_threads);
   } else {
 #else
   if (configs.enable_pmem) {
@@ -628,18 +651,21 @@ Status KVEngine::init(const std::string& name, const Configs& configs) {
   }
   (void)name;  // To suppress compile warnings
 #endif  // #ifdef KVDK_WITH_PMEM
-    Allocator* kv_allocator = new SystemMemoryAllocator();
+    Allocator* kv_allocator = new KVDK_VOLATILE_KV_MEMORY_ALLOCATOR_CLASS();
     kv_allocator->SetMaxAccessThreads(configs_.max_access_threads);
+    kv_allocator->SetDestMemoryNodes(configs_.dest_memory_nodes);
     kv_allocator_.reset(kv_allocator);
 #ifdef KVDK_WITH_PMEM
   }
 #endif  // #ifdef KVDK_WITH_PMEM
 
-  Allocator* skiplist_node_allocator = new SystemMemoryAllocator();
+  Allocator* skiplist_node_allocator =
+      new KVDK_SKIPLIST_NODE_MEMORY_ALLOCATOR_CLASS();
   skiplist_node_allocator->SetMaxAccessThreads(configs_.max_access_threads);
   skiplist_node_allocator_.reset(skiplist_node_allocator);
 
-  Allocator* hashtable_new_bucket_allocator = new SystemMemoryAllocator();
+  Allocator* hashtable_new_bucket_allocator =
+      new KVDK_HASH_TABLE_NEW_BUCKET_MEMORY_ALLOCATOR_CLASS();
   hashtable_new_bucket_allocator->SetMaxAccessThreads(
       configs_.max_access_threads);
   hashtable_new_bucket_allocator_.reset(hashtable_new_bucket_allocator);
