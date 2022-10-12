@@ -8,11 +8,7 @@
 namespace KVDK_NAMESPACE {
 Status KVEngine::SortedCreate(const StringView collection_name,
                               const SortedCollectionConfigs& s_configs) {
-  Status s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection_name)) {
     return Status::InvalidDataSize;
@@ -74,11 +70,8 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 }
 
 Status KVEngine::SortedDestroy(const StringView collection_name) {
-  auto s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
+
   auto ul = hash_table_->AcquireLock(collection_name);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
@@ -118,11 +111,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
 }
 
 Status KVEngine::SortedSize(const StringView collection, size_t* size) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
@@ -141,11 +130,7 @@ Status KVEngine::SortedSize(const StringView collection, size_t* size) {
 
 Status KVEngine::SortedGet(const StringView collection,
                            const StringView user_key, std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
@@ -166,10 +151,7 @@ Status KVEngine::SortedGet(const StringView collection,
 
 Status KVEngine::SortedPut(const StringView collection,
                            const StringView user_key, const StringView value) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
 
@@ -188,10 +170,8 @@ Status KVEngine::SortedPut(const StringView collection,
 
 Status KVEngine::SortedDelete(const StringView collection,
                               const StringView user_key) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
+  
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 

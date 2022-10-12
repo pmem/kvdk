@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2021-2022 Intel Corporation
+ * Copyright(c) 2022 Intel Corporation
  */
 
 #pragma once
@@ -22,7 +22,6 @@ class AllocatorAdaptor {
  public:
   virtual op_alloc_info wrapped_malloc(uint64_t size) = 0;
   virtual op_alloc_info wrapped_free(op_alloc_info* data) = 0;
-  virtual void InitThread() {}
   virtual ~AllocatorAdaptor(void) {}
 };
 
@@ -45,7 +44,6 @@ class PMemAllocatorWrapper : public AllocatorAdaptor {
   void InitPMemAllocator(const std::string& pmem_path, uint64_t pmem_size,
                          uint64_t num_segment_blocks, uint32_t block_size,
                          uint32_t num_write_threads) {
-    thread_manager_.reset(new ThreadManager(num_write_threads));
     pmem_alloc_ = PMEMAllocator::NewPMEMAllocator(
         pmem_path, pmem_size, num_segment_blocks, block_size, num_write_threads,
         true, false, nullptr);
@@ -71,10 +69,6 @@ class PMemAllocatorWrapper : public AllocatorAdaptor {
     }
   }
 
-  void InitThread() override {
-    thread_manager_->MaybeInitThread(access_thread);
-  }
-
   ~PMemAllocatorWrapper(void) {
     closing_ = true;
     // background thread exit;
@@ -88,5 +82,4 @@ class PMemAllocatorWrapper : public AllocatorAdaptor {
   PMEMAllocator* pmem_alloc_;
   bool closing_ = false;
   std::vector<std::thread> background;
-  std::shared_ptr<ThreadManager> thread_manager_;
 };

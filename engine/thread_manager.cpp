@@ -8,47 +8,44 @@
 
 namespace KVDK_NAMESPACE {
 
-void Thread::Release() {
-  assert(id == -1 || thread_manager != nullptr);
-  if (thread_manager) {
-    thread_manager->Release(*this);
-    thread_manager = nullptr;
+constexpr size_t kMaxRecycleID = 1024;
+
+std::shared_ptr<ThreadManager> ThreadManager::manager_(new ThreadManager);
+
+Thread::~Thread() {
+  if (manager != nullptr) {
+    manager->Release(*this);
   }
-  id = -1;
 }
 
-Thread::~Thread() { Release(); }
-
-Status ThreadManager::MaybeInitThread(Thread& t) {
+void ThreadManager::MaybeInitThread(Thread& t) {
   if (t.id < 0) {
-    if (!usable_id_.empty()) {
+    if (!recycle_id_.empty()) {
       std::lock_guard<SpinMutex> lg(spin_);
-      if (!usable_id_.empty()) {
-        auto it = usable_id_.begin();
+      if (!recycle_id_.empty()) {
+        auto it = recycle_id_.begin();
+        t.manager = shared_from_this();
         t.id = *it;
-        usable_id_.erase(it);
-        t.thread_manager = shared_from_this();
-        return Status::Ok;
+        recycle_id_.erase(it);
+        return;
       }
     }
     int id = ids_.fetch_add(1, std::memory_order_relaxed);
-    if (static_cast<unsigned>(id) >= max_threads_) {
-      return Status::TooManyAccessThreads;
-    }
+    t.manager = shared_from_this();
     t.id = id;
-    t.thread_manager = shared_from_this();
   }
-  return Status::Ok;
 }
 
-void ThreadManager::Release(const Thread& t) {
-  if (t.id >= 0) {
-    assert(static_cast<unsigned>(t.id) < max_threads_);
+void ThreadManager::Release(Thread& t) {
+  if (t.manager.get() == this && t.id >= 0 &&
+      recycle_id_.size() < kMaxRecycleID) {
     std::lock_guard<SpinMutex> lg(spin_);
-    usable_id_.insert(t.id);
+    recycle_id_.insert(t.id);
   }
+  t.id = -1;
+  t.manager = nullptr;
 }
 
-thread_local Thread access_thread;
+thread_local Thread this_thread;
 
 }  // namespace KVDK_NAMESPACE
