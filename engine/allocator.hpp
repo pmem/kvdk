@@ -62,11 +62,7 @@ class Allocator {
   Allocator(char* base_addr, uint64_t max_offset)
       : base_addr_(base_addr), max_offset_(max_offset) {}
 
-  virtual ~Allocator() {
-    if (thread_local_counter_enabled_) {
-      free(thread_allocated_sizes_);
-    }
-  }
+  virtual ~Allocator() {}
 
   // Purge a kvdk data record and free it
   template <typename T>
@@ -84,7 +80,7 @@ class Allocator {
       global_allocated_size_.fetch_add(sz);
     } else {
       assert(tid >= 0);
-      thread_allocated_sizes_[tid] += sz;
+      thread_allocated_sizes_[tid % thread_allocated_sizes_.size()] += sz;
     }
   }
 
@@ -93,14 +89,14 @@ class Allocator {
       global_allocated_size_.fetch_sub(sz);
     } else {
       assert(tid >= 0);
-      thread_allocated_sizes_[tid] -= sz;
+      thread_allocated_sizes_[tid % thread_allocated_sizes_.size()] -= sz;
     }
   }
 
   std::int64_t BytesAllocated() const {
     std::int64_t total = 0;
-    for (uint32_t i = 0; i < num_thread_local_counters; i++) {
-      total += thread_allocated_sizes_[i];
+    for (int64_t sz : thread_allocated_sizes_) {
+      total += sz;
     }
     total += global_allocated_size_.load();
     return total;
@@ -173,16 +169,8 @@ class Allocator {
       return false;
     }
 
-    if (thread_local_counter_enabled_) {
-      GlobalLogger.Info(
-          "Setting the number of thread local counters for Allocator again.\n");
-      free(thread_allocated_sizes_);
-    }
-
     thread_local_counter_enabled_ = true;
-    num_thread_local_counters = max_access_threads;
-    thread_allocated_sizes_ =
-        (std::int64_t*)calloc(max_access_threads, sizeof(std::int64_t));
+    thread_allocated_sizes_.resize(max_access_threads);
 
     return true;
   }
@@ -192,8 +180,7 @@ class Allocator {
   uint64_t max_offset_;
 
   bool thread_local_counter_enabled_{};
-  uint32_t num_thread_local_counters{0};
-  std::int64_t* thread_allocated_sizes_{nullptr};
+  std::vector<int64_t> thread_allocated_sizes_{};
   std::atomic<int64_t> global_allocated_size_{0};
 
   SpinMutex allocator_spin_;

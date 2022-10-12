@@ -378,8 +378,7 @@ HashList::WriteResult HashList::putPrepared(
   std::string internal_key(InternalKey(key));
   DLList::WriteArgs args(internal_key, value, RecordType::HashElem,
                          RecordStatus::Normal, timestamp, space);
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   ret.hash_entry_ptr = lookup_result.entry_ptr;
   if (lookup_result.s == Status::Ok) {
     ret.existing_record = lookup_result.entry.GetIndex().dl_record;
@@ -415,8 +414,7 @@ HashList::WriteResult HashList::deletePrepared(
   while ((ret.s = dl_list_.Update(args, ret.existing_record)) != Status::Ok) {
     kvdk_assert(ret.s == Status::Fail, "");
   }
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   hash_table_->Insert(lookup_result, RecordType::HashElem,
                       RecordStatus::Outdated, ret.write_record,
                       PointerType::DLRecord);

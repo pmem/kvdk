@@ -100,10 +100,6 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
   }
   auto thread_holder = AcquireAccessThread();
 
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
-
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
   Status s = hashListFind(collection, &hlist);

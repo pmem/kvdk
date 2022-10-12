@@ -171,7 +171,7 @@ Status KVEngine::SortedPut(const StringView collection,
 Status KVEngine::SortedDelete(const StringView collection,
                               const StringView user_key) {
   auto thread_holder = AcquireAccessThread();
-  
+
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 

@@ -34,7 +34,7 @@ class SystemMemoryAllocator : public Allocator {
     SpaceEntry entry;
     void* addr = malloc(size);
     if (addr != nullptr) {
-      LogAllocation(access_thread.id, size);
+      LogAllocation(ThreadManager::ThreadID(), size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -46,7 +46,7 @@ class SystemMemoryAllocator : public Allocator {
     SpaceEntry entry;
     void* addr = aligned_alloc(alignment, size);
     if (addr != nullptr) {
-      LogAllocation(access_thread.id, size);
+      LogAllocation(ThreadManager::ThreadID(), size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -57,7 +57,7 @@ class SystemMemoryAllocator : public Allocator {
   void Free(const SpaceEntry& entry) override {
     if (entry.offset) {
       free(reinterpret_cast<void*>(entry.offset));
-      LogDeallocation(access_thread.id, entry.size);
+      LogDeallocation(ThreadManager::ThreadID(), entry.size);
     }
   }
 
@@ -84,7 +84,7 @@ class JemallocMemoryAllocator : public Allocator {
     }
 
     if (KVDK_LIKELY(addr != nullptr)) {
-      LogAllocation(access_thread.id, size);
+      LogAllocation(ThreadManager::ThreadID(), size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -109,7 +109,7 @@ class JemallocMemoryAllocator : public Allocator {
     }
 
     if (KVDK_LIKELY(addr != nullptr)) {
-      LogAllocation(access_thread.id, size);
+      LogAllocation(ThreadManager::ThreadID(), size);
       entry.offset = reinterpret_cast<uint64_t>(addr);
       entry.size = size;
     }
@@ -129,7 +129,7 @@ class JemallocMemoryAllocator : public Allocator {
       je_kvdk_dallocx(ptr, MALLOCX_TCACHE_NONE);
     }
 
-    LogDeallocation(access_thread.id, entry.size);
+    LogDeallocation(ThreadManager::ThreadID(), entry.size);
   }
 
   std::string AllocatorName() override { return "jemalloc"; }
