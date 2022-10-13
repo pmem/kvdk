@@ -1354,10 +1354,10 @@ Status KVEngine::batchWriteImpl(WriteBatchImpl const& batch) {
   return Status::Ok;
 }
 
-Status KVEngine::GetTTL(const StringView str, TTLType* ttl_time) {
+Status KVEngine::GetTTL(const StringView key, TTLType* ttl_time) {
   *ttl_time = kInvalidTTL;
-  auto ul = hash_table_->AcquireLock(str);
-  auto res = lookupKey<false>(str, ExpirableRecordType);
+  auto ul = hash_table_->AcquireLock(key);
+  auto res = lookupKey<false>(key, ExpirableRecordType);
 
   if (res.s == Status::Ok) {
     ExpireTimeType expire_time;
@@ -1394,7 +1394,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
   if (res.s == Status::Ok) {
     switch (res.entry_ptr->GetIndexType()) {
       case PointerType::Skiplist: {
-        *type = ValueType::SortedSet;
+        *type = ValueType::SortedCollection;
         break;
       }
       case PointerType::List: {
@@ -1402,7 +1402,7 @@ Status KVEngine::TypeOf(StringView key, ValueType* type) {
         break;
       }
       case PointerType::HashList: {
-        *type = ValueType::HashSet;
+        *type = ValueType::HashCollection;
         break;
       }
       case PointerType::StringRecord: {

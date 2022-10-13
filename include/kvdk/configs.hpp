@@ -19,9 +19,6 @@ enum class LogLevel : uint8_t {
   None,
 };
 
-// A snapshot indicates a immutable view of a KVDK engine at a certain time
-struct Snapshot {};
-
 // Configs of created sorted collection
 // For correctness of encoding, please add new config field in the end of the
 // existing fields
@@ -31,12 +28,14 @@ struct SortedCollectionConfigs {
 };
 
 struct Configs {
+  // TODO: rename to concurrent internal threads
+  //
   // Max number of concurrent threads read/write the kvdk instance internally.
-  // Set it >= your CPU core number to get best performance
+  // Set it to the number of the hyper-threads to get best performance
   //
   // Notice:  you can call KVDK API with any number of threads, but if your
   // parallel threads more than max_access_threads, the performance will be
-  // damaged due to synchronization cost
+  // degraded due to synchronization cost
   uint64_t max_access_threads = 64;
 
   // Size of PMem space to store KV data, this is not scalable in current
