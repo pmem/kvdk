@@ -77,7 +77,8 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
   } else {
     if (segment_based_rebuild_ &&
         ++rebuilder_thread_cache_[ThreadManager::ThreadID() %
-                                  rebuilder_thread_cache_.size()] %
+                                  rebuilder_thread_cache_.size()]
+                    .visited_skiplists[Skiplist::FetchID(record)] %
                 kRestoreSkiplistStride ==
             0 &&
         findCheckpointVersion(record) == record &&

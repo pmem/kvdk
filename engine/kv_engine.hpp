@@ -46,11 +46,11 @@ class KVEngine : public Engine {
  public:
   ~KVEngine();
 
-  static Status Open(const std::string& name, Engine** engine_ptr,
+  static Status Open(const StringView engine_path, Engine** engine_ptr,
                      const Configs& configs);
 
-  static Status Restore(const std::string& engine_path,
-                        const std::string& backup_log, Engine** engine_ptr,
+  static Status Restore(const StringView engine_path,
+                        const StringView backup_log, Engine** engine_ptr,
                         const Configs& configs);
 
   Snapshot* GetSnapshot(bool make_checkpoint) override;
@@ -587,7 +587,7 @@ class KVEngine : public Engine {
 
   std::string dir_;
   std::string batch_log_dir_;
-  std::string db_file_;
+  std::string data_file_;
 
   Configs configs_;
   bool closing_{false};

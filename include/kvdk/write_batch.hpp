@@ -12,17 +12,18 @@ namespace KVDK_NAMESPACE {
 
 class WriteBatch {
  public:
-  virtual void StringPut(std::string const& key, std::string const& value) = 0;
-  virtual void StringDelete(std::string const& key) = 0;
+  virtual void StringPut(const StringView key, const StringView value) = 0;
+  virtual void StringDelete(const StringView key) = 0;
 
-  virtual void SortedPut(std::string const& key, std::string const& field,
-                         std::string const& value) = 0;
-  virtual void SortedDelete(std::string const& key,
-                            std::string const& field) = 0;
+  virtual void SortedPut(const StringView collection, const StringView key,
+                         const StringView value) = 0;
+  virtual void SortedDelete(const StringView collection,
+                            const StringView key) = 0;
 
-  virtual void HashPut(std::string const& key, std::string const& field,
-                       std::string const& value) = 0;
-  virtual void HashDelete(std::string const& key, std::string const& field) = 0;
+  virtual void HashPut(const StringView collection, const StringView key,
+                       const StringView value) = 0;
+  virtual void HashDelete(const StringView collection,
+                          const StringView key) = 0;
 
   virtual void Clear() = 0;
 
