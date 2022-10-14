@@ -26,29 +26,30 @@ Skiplist::~Skiplist() {
   destroyNodes();
   std::lock_guard<SpinMutex> lg_a(pending_delete_nodes_spin_);
   for (SkiplistNode* node : pending_deletion_nodes_) {
-    SkiplistNode::DeleteNode(node);
+    SkiplistNode::DeleteNode(node, node_allocator_);
   }
   pending_deletion_nodes_.clear();
   std::lock_guard<SpinMutex> lg_b(obsolete_nodes_spin_);
   for (SkiplistNode* node : obsolete_nodes_) {
-    SkiplistNode::DeleteNode(node);
+    SkiplistNode::DeleteNode(node, node_allocator_);
   }
   obsolete_nodes_.clear();
 }
 
 Skiplist::Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
                    Comparator comparator, Allocator* kv_allocator,
-                   HashTable* hash_table, LockTable* lock_table,
-                   bool index_with_hashtable)
+                   Allocator* node_allocator, HashTable* hash_table,
+                   LockTable* lock_table, bool index_with_hashtable)
     : Collection(name, id),
       dl_list_(h, kv_allocator, lock_table),
       size_(0),
       comparator_(comparator),
       kv_allocator_(kv_allocator),
+      node_allocator_(node_allocator),
       hash_table_(hash_table),
       record_locks_(lock_table),
       index_with_hashtable_(index_with_hashtable) {
-  header_ = SkiplistNode::NewNode(name, h, kMaxHeight);
+  header_ = SkiplistNode::NewNode(name, h, kMaxHeight, node_allocator_);
 
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     header_->RelaxedSetNext(i, nullptr);
@@ -502,12 +503,12 @@ bool Skiplist::Remove(DLRecord* removing_record, SkiplistNode* dram_node,
   return ok;
 }
 
-SkiplistNode* Skiplist::NewNodeBuild(DLRecord* data_record) {
+SkiplistNode* Skiplist::NewNodeBuild(DLRecord* data_record, Allocator* alloc) {
   SkiplistNode* dram_node = nullptr;
   auto height = Skiplist::randomHeight();
   if (height > 0) {
     StringView user_key = UserKey(data_record);
-    dram_node = SkiplistNode::NewNode(user_key, data_record, height);
+    dram_node = SkiplistNode::NewNode(user_key, data_record, height, alloc);
     if (dram_node == nullptr) {
       GlobalLogger.Error("Memory overflow in Skiplist::NewNodeBuild\n");
     }
@@ -759,7 +760,7 @@ seek_write_position:
 
   if (!key_exist) {
     // create dram node for new record
-    ret.dram_node = Skiplist::NewNodeBuild(ret.write_record);
+    ret.dram_node = Skiplist::NewNodeBuild(ret.write_record, node_allocator_);
     if (ret.dram_node != nullptr) {
       auto height = ret.dram_node->Height();
       for (int i = 1; i <= height; i++) {
@@ -790,7 +791,7 @@ void Skiplist::CleanObsoletedNodes() {
   if (pending_deletion_nodes_.size() > 0) {
     for (SkiplistNode* node : pending_deletion_nodes_) {
       // TODO: make sure the node is not referenced
-      SkiplistNode::DeleteNode(node);
+      SkiplistNode::DeleteNode(node, node_allocator_);
     }
     pending_deletion_nodes_.clear();
   }
@@ -886,12 +887,12 @@ void Skiplist::destroyNodes() {
       while (to_delete) {
         auto next = to_delete->Next(i).RawPointer();
         if (--to_delete->valid_links == 0) {
-          SkiplistNode::DeleteNode(to_delete);
+          SkiplistNode::DeleteNode(to_delete, node_allocator_);
         }
         to_delete = next;
       }
     }
-    SkiplistNode::DeleteNode(header_);
+    SkiplistNode::DeleteNode(header_, node_allocator_);
     header_ = nullptr;
   }
 }

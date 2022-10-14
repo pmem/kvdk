@@ -58,8 +58,8 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 
     skiplist = std::make_shared<Skiplist>(
         data_record, string_view_2_string(collection_name), id, comparator,
-        kv_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
-        s_configs.index_with_hashtable);
+        kv_allocator_.get(), skiplist_node_allocator_.get(), hash_table_.get(),
+        dllist_locks_.get(), s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
     insertKeyOrElem(lookup_result, RecordType::SortedHeader,
                     RecordStatus::Normal, skiplist.get());

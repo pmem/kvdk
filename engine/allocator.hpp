@@ -80,7 +80,9 @@ class Allocator {
       global_allocated_size_.fetch_add(sz);
     } else {
       assert(tid >= 0);
-      thread_allocated_sizes_[tid % thread_allocated_sizes_.size()] += sz;
+      assert(allocator_thread_cache_.size() > 0);
+      allocator_thread_cache_[tid % allocator_thread_cache_.size()]
+          .allocated_size += sz;
     }
   }
 
@@ -89,14 +91,16 @@ class Allocator {
       global_allocated_size_.fetch_sub(sz);
     } else {
       assert(tid >= 0);
-      thread_allocated_sizes_[tid % thread_allocated_sizes_.size()] -= sz;
+      assert(allocator_thread_cache_.size() > 0);
+      allocator_thread_cache_[tid % allocator_thread_cache_.size()]
+          .allocated_size -= sz;
     }
   }
 
   std::int64_t BytesAllocated() const {
     std::int64_t total = 0;
-    for (int64_t sz : thread_allocated_sizes_) {
-      total += sz;
+    for (auto& tc : allocator_thread_cache_) {
+      total += tc.allocated_size;
     }
     total += global_allocated_size_.load();
     return total;
@@ -170,17 +174,24 @@ class Allocator {
     }
 
     thread_local_counter_enabled_ = true;
-    thread_allocated_sizes_.resize(max_access_threads);
+    allocator_thread_cache_.resize(max_access_threads);
 
     return true;
   }
 
  private:
+  struct alignas(64) AllocatorThreadCache {
+    int64_t allocated_size;
+    // align to cache line to avoid cache conherence
+    char padding[64 - sizeof(int64_t)];
+  };
+  static_assert(sizeof(AllocatorThreadCache) % 64 == 0);
+
   char* base_addr_;
   uint64_t max_offset_;
 
   bool thread_local_counter_enabled_{};
-  std::vector<int64_t> thread_allocated_sizes_{};
+  std::vector<AllocatorThreadCache> allocator_thread_cache_;
   std::atomic<int64_t> global_allocated_size_{0};
 
   SpinMutex allocator_spin_;

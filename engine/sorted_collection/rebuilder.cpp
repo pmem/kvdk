@@ -86,7 +86,8 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
       SkiplistNode* start_node = nullptr;
       while (start_node == nullptr) {
         // Always build dram node for a recovery segment start record
-        start_node = Skiplist::NewNodeBuild(record);
+        start_node = Skiplist::NewNodeBuild(
+            record, kv_engine_->skiplist_node_allocator_.get());
       }
       addRecoverySegment(start_node);
     }
@@ -185,9 +186,13 @@ Status SortedCollectionRebuilder::initRebuildLists() {
         Skiplist::FetchID(valid_version_record) != id) {
       // No valid version, or valid version header belongs to another linked
       // skiplist with same name
-      skiplist = std::make_shared<Skiplist>(
-          header_record, collection_name, id, comparator, kv_allocator,
-          kv_engine_->hash_table_.get(), kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
+      skiplist = std::make_shared<Skiplist>(header_record, collection_name, id,
+                                            comparator, kv_allocator,
+                                            kv_engine_->skiplist_node_allocator_
+                                                .get(),
+                                            kv_engine_->hash_table_.get(),
+
+                                            kv_engine_->dllist_locks_.get(), false /* we do not build hash index for a invalid skiplist as it will be destroyed soon */);
       {
         std::lock_guard<SpinMutex> lg(lock_);
         invalid_skiplists_[id] = skiplist;
@@ -210,6 +215,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       if (outdated) {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator, kv_allocator,
+            kv_engine_->skiplist_node_allocator_.get(),
             kv_engine_->hash_table_.get(), kv_engine_->dllist_locks_.get(),
             false);
         {
@@ -219,6 +225,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
       } else {
         skiplist = std::make_shared<Skiplist>(
             valid_version_record, collection_name, id, comparator, kv_allocator,
+            kv_engine_->skiplist_node_allocator_.get(),
             kv_engine_->hash_table_.get(), kv_engine_->dllist_locks_.get(),
             s_configs.index_with_hashtable);
         {
@@ -378,7 +385,8 @@ Status SortedCollectionRebuilder::rebuildSegmentIndex(SkiplistNode* start_node,
         num_elems++;
 
         assert(valid_version_record != nullptr);
-        SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
+        SkiplistNode* dram_node = Skiplist::NewNodeBuild(
+            valid_version_record, kv_engine_->skiplist_node_allocator_.get());
         if (dram_node != nullptr) {
           cur_node->RelaxedSetNext(1, dram_node);
           dram_node->RelaxedSetNext(1, nullptr);
@@ -529,7 +537,8 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
 
       // Rebuild dram node
       assert(valid_version_record != nullptr);
-      SkiplistNode* dram_node = Skiplist::NewNodeBuild(valid_version_record);
+      SkiplistNode* dram_node = Skiplist::NewNodeBuild(
+          valid_version_record, kv_engine_->skiplist_node_allocator_.get());
 
       if (dram_node != nullptr) {
         auto height = dram_node->Height();
