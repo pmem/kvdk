@@ -15,31 +15,33 @@ void ChunkBasedAllocator::Free(const SpaceEntry&) {
 }
 
 SpaceEntry ChunkBasedAllocator::Allocate(uint64_t size) {
+  kvdk_assert(ThreadManager::ThreadID() >= 0, "");
   SpaceEntry entry;
+  auto& tc = dalloc_thread_cache_[ThreadManager::ThreadID() %
+                                  dalloc_thread_cache_.size()];
   if (size > chunk_size_) {
     entry = alloc_->AllocateAligned(kDefaultChunkAlignment, chunk_size_);
     if (entry.size != 0) {
-      dalloc_thread_cache_[access_thread.id].allocated_chunks.push_back(entry);
+      tc.allocated_chunks.push_back(entry);
     }
     return entry;
   }
 
-  if (dalloc_thread_cache_[access_thread.id].usable_bytes < size) {
+  if (tc.usable_bytes < size) {
     entry = alloc_->AllocateAligned(kDefaultChunkAlignment, chunk_size_);
     if (entry.size == 0) {
       return entry;
     }
     void* addr = alloc_->offset2addr(entry.offset);
-    dalloc_thread_cache_[access_thread.id].chunk_addr = (char*)addr;
-    dalloc_thread_cache_[access_thread.id].usable_bytes = chunk_size_;
-    dalloc_thread_cache_[access_thread.id].allocated_chunks.push_back(entry);
+    tc.chunk_addr = (char*)addr;
+    tc.usable_bytes = chunk_size_;
+    tc.allocated_chunks.push_back(entry);
   }
 
   entry.size = size;
-  entry.offset =
-      alloc_->addr2offset(dalloc_thread_cache_[access_thread.id].chunk_addr);
-  dalloc_thread_cache_[access_thread.id].chunk_addr += size;
-  dalloc_thread_cache_[access_thread.id].usable_bytes -= size;
+  entry.offset = alloc_->addr2offset(tc.chunk_addr);
+  tc.chunk_addr += size;
+  tc.usable_bytes -= size;
   return entry;
 }
 

@@ -25,14 +25,13 @@ class HashListRebuilder {
   };
 
   HashListRebuilder(Allocator* kv_allocator, HashTable* hash_table,
-                    LockTable* lock_table, ThreadManager* thread_manager,
-                    uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
+                    LockTable* lock_table, uint64_t num_rebuild_threads,
+                    const CheckPoint& checkpoint)
       : recovery_utils_(kv_allocator),
         rebuilder_thread_cache_(num_rebuild_threads),
         kv_allocator_(kv_allocator),
         hash_table_(hash_table),
         lock_table_(lock_table),
-        thread_manager_(thread_manager),
         num_rebuild_threads_(num_rebuild_threads),
         checkpoint_(checkpoint) {}
 
@@ -124,11 +123,6 @@ class HashListRebuilder {
   bool recoverToCheckPoint() { return checkpoint_.Valid(); }
 
   Status initRebuildLists() {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    if (s != Status::Ok) {
-      return s;
-    }
-
     // Keep headers with same id together for recognize outdated ones
     auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
       auto id1 = HashList::FetchID(header1);
@@ -154,8 +148,7 @@ class HashListRebuilder {
                     "outdated header record with valid linkage should always "
                     "point to it self");
         // Break the linkage
-        auto newer_offset =
-            kv_allocator_->addr2offset(linked_headers_[i + 1]);
+        auto newer_offset = kv_allocator_->addr2offset(linked_headers_[i + 1]);
         header_record->PersistPrevNT(newer_offset);
         kvdk_assert(!recovery_utils_.CheckPrevLinkage(header_record) &&
                         !recovery_utils_.CheckNextLinkage(header_record),
@@ -172,9 +165,9 @@ class HashListRebuilder {
       std::shared_ptr<HashList> hlist;
       if (valid_version_record == nullptr ||
           HashList::FetchID(valid_version_record) != id) {
-        hlist = std::make_shared<HashList>(header_record, collection_name, id,
-                                           kv_allocator_, hash_table_,
-                                           lock_table_);
+        hlist =
+            std::make_shared<HashList>(header_record, collection_name, id,
+                                       kv_allocator_, hash_table_, lock_table_);
         {
           std::lock_guard<SpinMutex> lg(lock_);
           invalid_hlists_[id] = hlist;
@@ -260,11 +253,8 @@ class HashListRebuilder {
   }
 
   Status rebuildIndex(HashList* hlist) {
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    if (s != Status::Ok) {
-      return s;
-    }
-    defer(thread_manager_->Release(access_thread));
+    this_thread.id = next_tid_.fetch_add(1);
+
     size_t num_elems = 0;
 
     auto iter = hlist->GetDLList()->GetRecordIterator();
@@ -316,9 +306,10 @@ class HashListRebuilder {
   }
 
   void addUnlinkedRecord(DLRecord* data_record) {
-    assert(access_thread.id >= 0);
-    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        data_record);
+    kvdk_assert(ThreadManager::ThreadID() >= 0, "");
+    rebuilder_thread_cache_[ThreadManager::ThreadID() %
+                            rebuilder_thread_cache_.size()]
+        .unlinked_records.push_back(data_record);
   }
 
   void cleanInvalidRecords() {
@@ -329,9 +320,8 @@ class HashListRebuilder {
       for (DLRecord* data_record : thread_cache.unlinked_records) {
         if (!recovery_utils_.CheckLinkage(data_record)) {
           data_record->Destroy();
-          to_free.emplace_back(
-              kv_allocator_->addr2offset_checked(data_record),
-              data_record->GetRecordSize());
+          to_free.emplace_back(kv_allocator_->addr2offset_checked(data_record),
+                               data_record->GetRecordSize());
         }
       }
       kv_allocator_->BatchFree(to_free);
@@ -356,7 +346,6 @@ class HashListRebuilder {
   Allocator* kv_allocator_;
   HashTable* hash_table_;
   LockTable* lock_table_;
-  ThreadManager* thread_manager_;
   const size_t num_rebuild_threads_;
   CheckPoint checkpoint_;
   SpinMutex lock_;
@@ -365,6 +354,11 @@ class HashListRebuilder {
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
       rebuild_hlists_;
   CollectionIDType max_recovered_id_;
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_tid_{0};
 };
 }  // namespace KVDK_NAMESPACE
 

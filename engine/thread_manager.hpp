@@ -13,38 +13,36 @@
 
 namespace KVDK_NAMESPACE {
 
-class Allocator;
 class ThreadManager;
 
 struct Thread {
  public:
-  Thread() : id(-1), thread_manager(nullptr) {}
+  Thread() : id(-1), manager(nullptr) {}
+  int64_t id;
+  std::shared_ptr<ThreadManager> manager;
+
   ~Thread();
-  void Release();
-  int id;
-  std::shared_ptr<ThreadManager> thread_manager;
 };
+
+extern thread_local Thread this_thread;
 
 class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
  public:
-  ThreadManager(uint32_t max_threads)
-      : max_threads_(max_threads), ids_(0), alloc_(nullptr) {}
-  ThreadManager(uint32_t max_threads, Allocator* alloc)
-      : max_threads_(max_threads), ids_(0), alloc_(alloc) {}
-  Status MaybeInitThread(Thread& t);
-
-  void Release(const Thread& t);
-
-  Allocator* GetAllocator() { return alloc_; }
+  static ThreadManager* Get() { return manager_.get(); }
+  static int64_t ThreadID() {
+    Get()->MaybeInitThread(this_thread);
+    return this_thread.id;
+  }
+  void MaybeInitThread(Thread& t);
+  void Release(Thread& t);
 
  private:
-  uint32_t max_threads_;
-  std::atomic<uint32_t> ids_;
-  std::unordered_set<uint32_t> usable_id_;
-  SpinMutex spin_;
-  Allocator* alloc_;
-};
+  ThreadManager() : ids_(0), recycle_id_(), spin_() {}
 
-extern thread_local Thread access_thread;
+  static std::shared_ptr<ThreadManager> manager_;
+  std::atomic<int64_t> ids_;
+  std::unordered_set<uint32_t> recycle_id_;
+  SpinMutex spin_;
+};
 
 }  // namespace KVDK_NAMESPACE

@@ -67,23 +67,12 @@ struct SkiplistNode {
   // 4 bytes for alignment, the actually allocated size may > 4
   char cached_key[4];
 
-  static void DeleteNode(SkiplistNode* node) {
-    Allocator* alloc = global_memory_allocator();
-    if (access_thread.thread_manager &&
-        access_thread.thread_manager->GetAllocator()) {
-      alloc = access_thread.thread_manager->GetAllocator();
-    }
-    uint64_t offset = alloc->addr2offset(node->heap_space_start());
-    uint64_t size = node->allocated_size();
-    alloc->Free(SpaceEntry(offset, size));
-  }
-
+  // Create a skiplist node, you should use same allocator for NewNode and
+  // DeleteNode
   static SkiplistNode* NewNode(const StringView& key, DLRecord* data_record,
-                               uint8_t height) {
-    Allocator* alloc = global_memory_allocator();
-    if (access_thread.thread_manager &&
-        access_thread.thread_manager->GetAllocator()) {
-      alloc = access_thread.thread_manager->GetAllocator();
+                               uint8_t height, Allocator* alloc) {
+    if (alloc == nullptr) {
+      alloc = global_memory_allocator();
     }
     size_t size;
     if (height >= kCacheHeight && key.size() > 4) {
@@ -105,6 +94,17 @@ struct SkiplistNode {
       node->maybeCacheKey(key);
     }
     return node;
+  }
+
+  // Destroy a skiplist node, you should use same allocator for NewNode and
+  // DeleteNode
+  static void DeleteNode(SkiplistNode* node, Allocator* alloc) {
+    if (alloc == nullptr) {
+      alloc = global_memory_allocator();
+    }
+    uint64_t offset = alloc->addr2offset(node->heap_space_start());
+    uint64_t size = node->allocated_size();
+    alloc->Free(SpaceEntry(offset, size));
   }
 
   uint16_t Height() { return height; }
@@ -208,8 +208,8 @@ class Skiplist : public Collection {
 
   Skiplist(DLRecord* h, const std::string& name, CollectionIDType id,
            Comparator comparator, Allocator* kv_allocator,
-           HashTable* hash_table, LockTable* lock_table,
-           bool index_with_hashtable);
+           Allocator* node_allocator, HashTable* hash_table,
+           LockTable* lock_table, bool index_with_hashtable);
 
   ~Skiplist() final;
 
@@ -366,7 +366,7 @@ class Skiplist : public Collection {
                       LockTable* lock_table);
 
   // Build a skiplist node for "data_record"
-  static SkiplistNode* NewNodeBuild(DLRecord* data_record);
+  static SkiplistNode* NewNodeBuild(DLRecord* data_record, Allocator* alloc);
 
   // Format:
   // id (8 bytes) | configs
@@ -514,7 +514,10 @@ class Skiplist : public Collection {
   DLList dl_list_;
   std::atomic<size_t> size_;
   Comparator comparator_ = compare_string_view;
+  // Allocate space for skiplist kv record
   Allocator* kv_allocator_;
+  // Allocate space for skiplist high level nodes
+  Allocator* node_allocator_;
   // TODO: use specified hash table for each skiplist
   HashTable* hash_table_;
   // locks to protect modification of records

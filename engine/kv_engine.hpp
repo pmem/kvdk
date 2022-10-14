@@ -46,11 +46,11 @@ class KVEngine : public Engine {
  public:
   ~KVEngine();
 
-  static Status Open(const std::string& name, Engine** engine_ptr,
+  static Status Open(const StringView engine_path, Engine** engine_ptr,
                      const Configs& configs);
 
-  static Status Restore(const std::string& engine_path,
-                        const std::string& backup_log, Engine** engine_ptr,
+  static Status Restore(const StringView engine_path,
+                        const StringView backup_log, Engine** engine_ptr,
                         const Configs& configs);
 
   Snapshot* GetSnapshot(bool make_checkpoint) override;
@@ -79,13 +79,14 @@ class KVEngine : public Engine {
   // 1. Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
   // 2. Expire is not compatible with checkpoint for now
-  Status Expire(const StringView str, TTLType ttl_time) override;
+  Status Expire(const StringView key, TTLType ttl_time) final;
+
   // Get time to expire of str
   //
   // Notice:
   // Expire assumes that str is not duplicated among all types, which is not
   // implemented yet
-  Status GetTTL(const StringView str, TTLType* ttl_time) override;
+  Status GetTTL(const StringView key, TTLType* ttl_time) final;
 
   Status TypeOf(StringView key, ValueType* type) final;
 
@@ -176,8 +177,6 @@ class KVEngine : public Engine {
     return std::unique_ptr<WriteBatch>{new WriteBatchImpl{}};
   }
 
-  void ReleaseAccessThread() override { access_thread.Release(); }
-
   // For test cases
   const std::unordered_map<CollectionIDType, std::shared_ptr<Skiplist>>&
   GetSkiplists() {
@@ -192,7 +191,8 @@ class KVEngine : public Engine {
   friend Cleaner;
 
   KVEngine(const Configs& configs)
-      : engine_thread_cache_(configs.max_access_threads),
+      : access_thread_cv_(configs.max_access_threads),
+        engine_thread_cache_(configs.max_access_threads),
         cleaner_thread_cache_(configs.max_access_threads),
         version_controller_(configs.max_access_threads),
         old_records_cleaner_(this, configs.max_access_threads),
@@ -225,6 +225,42 @@ class KVEngine : public Engine {
     SpinMutex mtx;
   };
 
+  struct AccessThreadCV {
+   public:
+    struct Holder {
+     public:
+      Holder(AccessThreadCV* cv) : cv_(cv) { cv->Acquire(); }
+      ~Holder() { cv_->Release(); }
+
+     private:
+      AccessThreadCV* cv_;
+    };
+
+   private:
+    void Acquire() {
+      std::unique_lock<SpinMutex> ul(spin_);
+      while (holder_id_ != ThreadManager::ThreadID() && holder_id_ != -1) {
+        cv_.wait(ul);
+      }
+      holder_id_ = ThreadManager::ThreadID();
+    }
+
+    void Release() {
+      std::unique_lock<SpinMutex> ul(spin_);
+      holder_id_ = -1;
+      cv_.notify_one();
+    }
+
+    int64_t holder_id_ = -1;
+    SpinMutex spin_;
+    std::condition_variable_any cv_;
+  };
+
+  AccessThreadCV::Holder AcquireAccessThread() {
+    return AccessThreadCV::Holder(&access_thread_cv_[ThreadManager::ThreadID() %
+                                                     access_thread_cv_.size()]);
+  }
+
   bool checkKeySize(const StringView& key) { return key.size() <= UINT16_MAX; }
 
   bool checkValueSize(const StringView& value) {
@@ -236,10 +272,6 @@ class KVEngine : public Engine {
 
   Status hashGetImpl(const StringView& key, std::string* value,
                      uint16_t type_mask);
-
-  inline Status maybeInitAccessThread() {
-    return thread_manager_->MaybeInitThread(access_thread);
-  }
 
   bool registerComparator(const StringView& collection_name,
                           Comparator comp_func) {
@@ -529,8 +561,8 @@ class KVEngine : public Engine {
   std::unique_ptr<Allocator> kv_allocator_;
   std::unique_ptr<Allocator> skiplist_node_allocator_;
   std::unique_ptr<Allocator> hashtable_new_bucket_allocator_;
-  std::shared_ptr<ThreadManager> thread_manager_;
 
+  Array<AccessThreadCV> access_thread_cv_;
   Array<EngineThreadCache> engine_thread_cache_;
   Array<CleanerThreadCache> cleaner_thread_cache_;
 
@@ -556,7 +588,7 @@ class KVEngine : public Engine {
 
   std::string dir_;
   std::string batch_log_dir_;
-  std::string db_file_;
+  std::string data_file_;
 
   Configs configs_;
   bool closing_{false};
@@ -583,6 +615,11 @@ class KVEngine : public Engine {
   BackgroundWorkSignals bg_work_signals_;
 
   std::atomic<int64_t> round_robin_id_{0};
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_recovery_tid_{0};
 
 #ifdef KVDK_WITH_PMEM
   Status initOrRestoreCheckpoint();

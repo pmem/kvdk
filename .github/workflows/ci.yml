@@ -9,6 +9,11 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Check Java codestyle
+        run: |
+          cd java
+          mvn spotless:check
+
       - name: Get cmake
         uses: lukka/get-cmake@v3.19.2
 

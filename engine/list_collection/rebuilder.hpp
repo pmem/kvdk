@@ -24,14 +24,13 @@ class ListRebuilder {
   };
 
   ListRebuilder(Allocator* kv_allocator, HashTable* hash_table,
-                LockTable* lock_table, ThreadManager* thread_manager,
-                uint64_t num_rebuild_threads, const CheckPoint& checkpoint)
+                LockTable* lock_table, uint64_t num_rebuild_threads,
+                const CheckPoint& checkpoint)
       : recovery_utils_(kv_allocator),
         rebuilder_thread_cache_(num_rebuild_threads),
         kv_allocator_(kv_allocator),
         hash_table_(hash_table),
         lock_table_(lock_table),
-        thread_manager_(thread_manager),
         num_rebuild_threads_(num_rebuild_threads),
         checkpoint_(checkpoint) {}
 
@@ -224,12 +223,9 @@ class ListRebuilder {
   }
 
   Status rebuildIndex(List* list) {
+    this_thread.id = next_tid_.fetch_add(1);
+
     auto ul = list->AcquireLock();
-    Status s = thread_manager_->MaybeInitThread(access_thread);
-    if (s != Status::Ok) {
-      return s;
-    }
-    defer(thread_manager_->Release(access_thread));
     auto iter = list->GetDLList()->GetRecordIterator();
     iter->SeekToFirst();
     while (iter->Valid()) {
@@ -255,9 +251,10 @@ class ListRebuilder {
   }
 
   void addUnlinkedRecord(DLRecord* data_record) {
-    assert(access_thread.id >= 0);
-    rebuilder_thread_cache_[access_thread.id].unlinked_records.push_back(
-        data_record);
+    kvdk_assert(ThreadManager::ThreadID() >= 0, "");
+    rebuilder_thread_cache_[ThreadManager::ThreadID() %
+                            rebuilder_thread_cache_.size()]
+        .unlinked_records.push_back(data_record);
   }
 
   void cleanInvalidRecords() {
@@ -268,9 +265,8 @@ class ListRebuilder {
       for (DLRecord* data_record : thread_cache.unlinked_records) {
         if (!recovery_utils_.CheckLinkage(data_record)) {
           data_record->Destroy();
-          to_free.emplace_back(
-              kv_allocator_->addr2offset_checked(data_record),
-              data_record->GetRecordSize());
+          to_free.emplace_back(kv_allocator_->addr2offset_checked(data_record),
+                               data_record->GetRecordSize());
         }
       }
       kv_allocator_->BatchFree(to_free);
@@ -298,13 +294,17 @@ class ListRebuilder {
   Allocator* kv_allocator_;
   HashTable* hash_table_;
   LockTable* lock_table_;
-  ThreadManager* thread_manager_;
   const size_t num_rebuild_threads_;
   CheckPoint checkpoint_;
   SpinMutex lock_;
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> invalid_lists_;
   std::unordered_map<CollectionIDType, std::shared_ptr<List>> rebuild_lists_;
   CollectionIDType max_recovered_id_;
+
+  // We manually allocate recovery thread id for no conflict in multi-thread
+  // recovering
+  // Todo: do not hard code
+  std::atomic<uint64_t> next_tid_{0};
 };
 }  // namespace KVDK_NAMESPACE
 

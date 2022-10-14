@@ -43,8 +43,8 @@ typedef void (*KVDKFreeFunc)(void*);
 
 #define KVDK_TYPES(GEN) \
   GEN(String)           \
-  GEN(SortedSet)        \
-  GEN(HashSet)          \
+  GEN(SortedCollection) \
+  GEN(HashCollection)   \
   GEN(List)
 
 typedef enum { KVDK_TYPES(GENERATE_ENUM) } KVDKValueType;
@@ -65,7 +65,6 @@ __attribute__((unused)) static char const* KVDKValueTypeString[] = {
   GEN(NotSupported)         \
   GEN(PMemMapFileError)     \
   GEN(InvalidBatchSize)     \
-  GEN(TooManyAccessThreads) \
   GEN(InvalidDataSize)      \
   GEN(InvalidArgument)      \
   GEN(IOError)              \

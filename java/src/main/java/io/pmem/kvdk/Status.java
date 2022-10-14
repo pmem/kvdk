@@ -61,13 +61,12 @@ public class Status {
         NotSupported((byte) 0x9),
         PMemMapFileError((byte) 0xA),
         InvalidBatchSize((byte) 0xB),
-        TooManyAccessThreads((byte) 0xC),
-        InvalidDataSize((byte) 0xD),
-        InvalidArgument((byte) 0xE),
-        IOError((byte) 0xF),
-        InvalidConfiguration((byte) 0x10),
-        Fail((byte) 0x11),
-        Abort((byte) 0x12),
+        InvalidDataSize((byte) 0xC),
+        InvalidArgument((byte) 0xD),
+        IOError((byte) 0xE),
+        InvalidConfiguration((byte) 0xF),
+        Fail((byte) 0x10),
+        Abort((byte) 0x11),
         Undefined((byte) 0x7F);
 
         private final byte value;

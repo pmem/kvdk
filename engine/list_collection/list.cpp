@@ -41,8 +41,7 @@ List::WriteResult List::PushFront(const StringView& elem, TimestampType ts) {
                          RecordStatus::Normal, ts, space);
   ret.s = dl_list_.PushFront(args);
   kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.push_front(ret.write_record);
   return ret;
 }
@@ -61,8 +60,7 @@ List::WriteResult List::PushBack(const StringView& elem, TimestampType ts) {
                          RecordStatus::Normal, ts, space);
   ret.s = dl_list_.PushBack(args);
   kvdk_assert(ret.s == Status::Ok, "Push front should alwasy success");
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.push_back(ret.write_record);
   return ret;
 }
@@ -202,8 +200,7 @@ List::WriteResult List::InsertAt(const StringView& elem, long index,
   ret.s = dl_list_.InsertBefore(args, next);
   kvdk_assert(ret.s == Status::Ok,
               "the whole list is locked, so the insertion must be success");
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.insert(iter, ret.write_record);
   return ret;
 }
@@ -236,8 +233,7 @@ List::WriteResult List::Erase(long index, TimestampType ts) {
     kvdk_assert(ret.s == Status::Fail, "");
   };
   ret.existing_record = record;
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   live_records_.erase(iter);
   return ret;
 }
@@ -292,8 +288,7 @@ List::WriteResult List::Update(long index, const StringView& elem,
     kvdk_assert(ret.s == Status::Fail, "");
   }
   ret.existing_record = record;
-  ret.write_record =
-      kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
+  ret.write_record = kv_allocator_->offset2addr_checked<DLRecord>(space.offset);
   *iter = ret.write_record;
   return ret;
 }
