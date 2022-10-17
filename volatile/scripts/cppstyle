@@ -1,0 +1,44 @@
+#!/usr/bin/perl -w
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2017, Intel Corporation
+
+use strict;
+use Text::Diff;
+
+my $clangfmt = shift or die;
+my $mode = shift or die;
+
+sub check {
+	my ($file) = @_;
+	my $original;
+	my $formatted;
+
+	$formatted = `$clangfmt -style=file "$file"`;
+
+	if ($mode eq 'check') {
+		local $/=undef;
+		open FILE, "$file" or die "Couldn't open file: $file";
+		binmode FILE;
+		$original = <FILE>;
+		close FILE;
+
+		my $diff = diff \$original, \$formatted;
+
+		if ($diff ne "") {
+			print "Style check using $clangfmt for file $file failed\n";
+			print $diff;
+			die "Style check using $clangfmt for file $file failed\n";
+		}
+	} elsif ($mode eq 'format') {
+		local $/=undef;
+		open FILE, '>', "$file" or die "Couldn't open file: $file";
+		print FILE "$formatted";
+		close FILE;
+	} else {
+		die 'unknown mode';
+	}
+}
+
+foreach(@ARGV) {
+	check($_)
+}

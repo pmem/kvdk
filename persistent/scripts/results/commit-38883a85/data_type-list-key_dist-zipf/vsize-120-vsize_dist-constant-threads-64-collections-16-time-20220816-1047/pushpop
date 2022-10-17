@@ -1,0 +1,51 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3752 ms: Map pmem space done
+[INFO] time 11237 ms: Start restore data
+[INFO] time 15298 ms: RestoreData done: iterated 569187533 records
+[INFO] time 15299 ms: Rebuild skiplist done
+[INFO] time 39730 ms: Rebuild Lists done
+[INFO] time 39730 ms: Rebuild HashLists done
+[INFO] time 39731 ms: PMem Usage: 109132017344 B, 106574235 KB, 104076 MB, 101 GB
+Init 32 readers and 32 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000          42000          64000              0          42000          64000
+           2000          24000          32000              0          66000          96000
+           3000          30000          32000              0          96000         128000
+           4000          25000          24000              0         121000         152000
+           5000           8000          18000              0         129000         170000
+           6000          22000          22000              0         151000         192000
+           7000          10000          17000              0         161000         209000
+           8000          13000          17000              0         174000         226000
+           9000          17000          15000              0         191000         241000
+          10000          11000          17000              0         202000         258000
+          11000          12000          15000              0         214000         273000
+          12000          11000          17000              0         225000         290000
+          13001           9000          11000              0         234000         301000
+          14001          12000          15000              0         246000         316000
+          15001          11000          13000              0         257000         329000
+          16001           7000          10000              0         264000         339000
+          17001          11000          19000              0         275000         358000
+          18001          10000           5000              0         285000         363000
+          19001           8000          13000              0         293000         376000
+          20001           8000          15000              0         301000         391000
+          21001          11000           6000              0         312000         397000
+          22001           8000          14000              0         320000         411000
+          23001           8000          15000              0         328000         426000
+          24001           6000           3000              0         334000         429000
+          25001          11000          16000              0         345000         445000
+          26001           7000          10000              0         352000         455000
+          27002           7000           4000              0         359000         459000
+          28002           8000          12000              0         367000         471000
+          29002           9000           9000              0         376000         480000
+          30002           7000           9000              0         383000         489000
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	11321. Average Write Ops:	14035
+[INFO] time 69770 ms: Closing instance ... 
+[INFO] time 69771 ms: Waiting bg threads exit ... 
+[INFO] time 70736 ms: PMem Usage: 109254634880 B, 106693979 KB, 104193 MB, 101 GB
+[INFO] time 70736 ms: Cleaner Thread Num: 1
+[INFO] time 70737 ms: PMem Usage: 109254634880 B, 106693979 KB, 104193 MB, 101 GB
+[INFO] time 70738 ms: Instance closed

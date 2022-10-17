@@ -1,0 +1,56 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3769 ms: Map pmem space done
+[INFO] time 11275 ms: Start restore data
+[INFO] time 17179 ms: RestoreData done: iterated 542770042 records
+[INFO] time 17179 ms: segment based rebuild start
+[INFO] time 17180 ms: build segment index
+[INFO] time 40546 ms: link dram nodes
+[INFO] time 40781 ms: segment based rebuild done
+[INFO] time 40781 ms: Rebuild skiplist done
+[INFO] time 40781 ms: Rebuild Lists done
+[INFO] time 40782 ms: Rebuild HashLists done
+[INFO] time 40782 ms: PMem Usage: 103766156480 B, 101334137 KB, 98959 MB, 96 GB
+Create 16 Sorted Collections
+Init 0 readers and 64 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000              0        7743000              0              0        7743000
+           2000              0        7462000              0              0       15205000
+           3000              0        7393000              0              0       22598000
+           4000              0        7383000              0              0       29981000
+           5000              0        7355000              0              0       37336000
+           6000              0        6845000              0              0       44181000
+           7000              0        7158000              0              0       51339000
+           8000              0        7657000              0              0       58996000
+           9000              0        7660000              0              0       66656000
+          10000              0        7506000              0              0       74162000
+          11001              0        7380000              0              0       81542000
+          12001              0        7363000              0              0       88905000
+          13001              0        6912000              0              0       95817000
+          14001              0        6891000              0              0      102708000
+          15001              0        7165000              0              0      109873000
+          16001              0        7473000              0              0      117346000
+          17001              0        7596000              0              0      124942000
+          18001              0        7578000              0              0      132520000
+          19001              0        7573000              0              0      140093000
+          20001              0        7222000              0              0      147315000
+          21001              0        7253000              0              0      154568000
+          22002              0        7314000              0              0      161882000
+          23002              0        7297000              0              0      169179000
+          24002              0        7299000              0              0      176478000
+          25002              0        7308000              0              0      183786000
+          26002              0        7061000              0              0      190847000
+          27002              0        7490000              0              0      198337000
+          28002              0        7502000              0              0      205839000
+          29002              0        7493000              0              0      213332000
+          30002              0        7273000              0              0      220605000
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	0. Average Write Ops:	7335714
+[INFO] time 70792 ms: Closing instance ... 
+[INFO] time 70792 ms: Waiting bg threads exit ... 
+[INFO] time 70839 ms: PMem Usage: 129801539456 B, 126759315 KB, 123788 MB, 120 GB
+[INFO] time 70839 ms: Cleaner Thread Num: 1
+[INFO] time 71227 ms: PMem Usage: 129801539456 B, 126759315 KB, 123788 MB, 120 GB
+[INFO] time 71227 ms: Instance closed

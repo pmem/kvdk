@@ -1,0 +1,56 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3754 ms: Map pmem space done
+[INFO] time 11248 ms: Start restore data
+[INFO] time 18414 ms: RestoreData done: iterated 673868721 records
+[INFO] time 18415 ms: segment based rebuild start
+[INFO] time 18416 ms: build segment index
+[INFO] time 47166 ms: link dram nodes
+[INFO] time 47733 ms: segment based rebuild done
+[INFO] time 47801 ms: Rebuild skiplist done
+[INFO] time 47863 ms: Rebuild Lists done
+[INFO] time 47939 ms: Rebuild HashLists done
+[INFO] time 48016 ms: PMem Usage: 129382793408 B, 126350384 KB, 123389 MB, 120 GB
+Create 16 Sorted Collections
+Init 64 readers and 0 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000      102990888              0              0      102990888              0
+           2000      102251149              0              0      205242037              0
+           3000      104336232              0              0      309578269              0
+           4000      104170066              0              0      413748335              0
+           5000      104089986              0              0      517838321              0
+           6000       95166071              0              0      613004392              0
+           7000      100817717              0              0      713822109              0
+           8000      104097994              0              0      817920103              0
+           9000      103786683              0              0      921706786              0
+          10000      102802700              0              0     1024509486              0
+          11000      101464363              0              0     1125973849              0
+          12000      104172068              0              0     1230145917              0
+          13001      104137033              0              0     1334282950              0
+          14001       87595508              0              0     1421878458              0
+          15001      104197093              0              0     1526075551              0
+          16001      104128024              0              0     1630203575              0
+          17001      104191087              0              0     1734394662              0
+          18001       99680581              0              0     1834075243              0
+          19001      104204100              0              0     1938279343              0
+          20001      104239135              0              0     2042518478              0
+          21001      104165061              0              0     2146683539              0
+          22001      104154050              0              0     2250837589              0
+          23001      104192088              0              0     2355029677              0
+          24001      104305201              0              0     2459334878              0
+          25002      104208104              0              0     2563542982              0
+          26002      104153049              0              0     2667696031              0
+          27002      102765663              0              0     2770461694              0
+          28002      104216112              0              0     2874677806              0
+          29002      103181078              0              0     2977858884              0
+          30002      103879776              0              0     3081738660              0
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	102732022. Average Write Ops:	0
+[INFO] time 78053 ms: Closing instance ... 
+[INFO] time 78053 ms: Waiting bg threads exit ... 
+[INFO] time 78079 ms: PMem Usage: 129382793408 B, 126350384 KB, 123389 MB, 120 GB
+[INFO] time 78080 ms: Cleaner Thread Num: 1
+[INFO] time 78081 ms: PMem Usage: 129382793408 B, 126350384 KB, 123389 MB, 120 GB
+[INFO] time 78081 ms: Instance closed

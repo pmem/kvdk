@@ -1,0 +1,13 @@
+io/pmem/kvdk/AbstractNativeReference.class
+io/pmem/kvdk/NativeBytesHandle.class
+io/pmem/kvdk/Iterator.class
+io/pmem/kvdk/Status$Code.class
+io/pmem/kvdk/KVDKException.class
+io/pmem/kvdk/KVDKObject.class
+io/pmem/kvdk/Engine.class
+io/pmem/kvdk/Configs.class
+io/pmem/kvdk/Engine$LibraryState.class
+io/pmem/kvdk/WriteBatch.class
+io/pmem/kvdk/WriteOptions.class
+io/pmem/kvdk/NativeLibraryLoader.class
+io/pmem/kvdk/Status.class

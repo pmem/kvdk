@@ -1,0 +1,56 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3745 ms: Map pmem space done
+[INFO] time 11224 ms: Start restore data
+[INFO] time 18409 ms: RestoreData done: iterated 674852112 records
+[INFO] time 18410 ms: segment based rebuild start
+[INFO] time 18410 ms: build segment index
+[INFO] time 46583 ms: link dram nodes
+[INFO] time 47081 ms: segment based rebuild done
+[INFO] time 47081 ms: Rebuild skiplist done
+[INFO] time 47081 ms: Rebuild Lists done
+[INFO] time 47082 ms: Rebuild HashLists done
+[INFO] time 47082 ms: PMem Usage: 129571604480 B, 126534770 KB, 123569 MB, 120 GB
+Create 16 Sorted Collections
+Init 58 readers and 6 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000       55103000        1191000              0       55103000        1191000
+           2000       55025000        1193000              0      110128000        2384000
+           3000       54575000        1184000              0      164703000        3568000
+           4000       54639000        1187000              0      219342000        4755000
+           5000       54673000        1188000              0      274015000        5943000
+           6000       54661000        1120000              0      328676000        7063000
+           7000       54729000        1181000              0      383405000        8244000
+           8000       54746000        1180000              0      438151000        9424000
+           9000       48330000        1262000              0      486481000       10686000
+          10000          23000        1682000              0      486504000       12368000
+          11001              0        1614000              0      486504000       13982000
+          12001              0        1606000              0      486504000       15588000
+          13001              0        1612000              0      486504000       17200000
+          14001              0        1617000              0      486504000       18817000
+          15001              0        1623000              0      486504000       20440000
+          16001              0        1599000              0      486504000       22039000
+          17001              0        1601000              0      486504000       23640000
+          18001              0        1609000              0      486504000       25249000
+          19001              0        1627000              0      486504000       26876000
+          20001              0        1634000              0      486504000       28510000
+          21001              0        1610000              0      486504000       30120000
+          22001              0        1602000              0      486504000       31722000
+          23002              0        1608000              0      486504000       33330000
+          24002              0        1616000              0      486504000       34946000
+          25002              0        1626000              0      486504000       36572000
+          26002              0        1607000              0      486504000       38179000
+          27002              0        1607000              0      486504000       39786000
+          28002              0        1612000              0      486504000       41398000
+          29002              0        1638000              0      486504000       43036000
+          30002              0        1643000              0      486504000       44679000
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	54670500. Average Write Ops:	1173333
+[INFO] time 77087 ms: Closing instance ... 
+[INFO] time 77088 ms: Waiting bg threads exit ... 
+[INFO] time 77126 ms: PMem Usage: 129576984320 B, 126540023 KB, 123574 MB, 120 GB
+[INFO] time 77127 ms: Cleaner Thread Num: 1
+[INFO] time 77201 ms: PMem Usage: 129576984320 B, 126540023 KB, 123574 MB, 120 GB
+[INFO] time 77202 ms: Instance closed

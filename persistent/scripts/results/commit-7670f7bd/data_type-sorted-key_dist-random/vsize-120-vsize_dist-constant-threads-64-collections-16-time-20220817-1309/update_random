@@ -1,0 +1,56 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3757 ms: Map pmem space done
+[INFO] time 11255 ms: Start restore data
+[INFO] time 19464 ms: RestoreData done: iterated 922968918 records
+[INFO] time 19464 ms: segment based rebuild start
+[INFO] time 19465 ms: build segment index
+[INFO] time 58040 ms: link dram nodes
+[INFO] time 58448 ms: segment based rebuild done
+[INFO] time 58449 ms: Rebuild skiplist done
+[INFO] time 58450 ms: Rebuild Lists done
+[INFO] time 58452 ms: Rebuild HashLists done
+[INFO] time 58453 ms: PMem Usage: 177210031232 B, 173056671 KB, 169000 MB, 165 GB
+Create 16 Sorted Collections
+Init 0 readers and 64 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000              0       10849000              0              0       10849000
+           2000              0       10918000              0              0       21767000
+           3000              0       10910000              0              0       32677000
+           4000              0       10885000              0              0       43562000
+           5000              0       10878000              0              0       54440000
+           6000              0       10794000              0              0       65234000
+           7000              0       10796000              0              0       76030000
+           8000              0       10805000              0              0       86835000
+           9000              0       10811000              0              0       97646000
+          10000              0       10812000              0              0      108458000
+          11000              0       10775000              0              0      119233000
+          12000              0       10797000              0              0      130030000
+          13001              0       10810000              0              0      140840000
+          14001              0       10815000              0              0      151655000
+          15001              0       10819000              0              0      162474000
+          16001              0       10712000              0              0      173186000
+          17001              0       10729000              0              0      183915000
+          18001              0       10730000              0              0      194645000
+          19001              0       10743000              0              0      205388000
+          20001              0       10743000              0              0      216131000
+          21001              0       10681000              0              0      226812000
+          22001              0       10696000              0              0      237508000
+          23001              0       10700000              0              0      248208000
+          24002              0       10707000              0              0      258915000
+          25002              0       10717000              0              0      269632000
+          26002              0       10640000              0              0      280272000
+          27002              0       10722000              0              0      290994000
+          28002              0       10706000              0              0      301700000
+          29002              0       10720000              0              0      312420000
+          30002              0       10708000              0              0      323128000
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	0. Average Write Ops:	10762892
+[INFO] time 88468 ms: Closing instance ... 
+[INFO] time 88468 ms: Waiting bg threads exit ... 
+[INFO] time 88579 ms: PMem Usage: 177245633600 B, 173091439 KB, 169034 MB, 165 GB
+[INFO] time 88579 ms: Cleaner Thread Num: 1
+[INFO] time 88723 ms: PMem Usage: 177245633600 B, 173091439 KB, 169034 MB, 165 GB
+[INFO] time 88723 ms: Instance closed

@@ -1,0 +1,56 @@
+[INFO] time 0 ms: Opening kvdk instance from /mnt/pmem0/kvdk_benchmark ...
+[INFO] time 3755 ms: Map pmem space done
+[INFO] time 11264 ms: Start restore data
+[INFO] time 21182 ms: RestoreData done: iterated 727848556 records
+[INFO] time 21183 ms: segment based rebuild start
+[INFO] time 21183 ms: build segment index
+[INFO] time 52397 ms: link dram nodes
+[INFO] time 52721 ms: segment based rebuild done
+[INFO] time 52722 ms: Rebuild skiplist done
+[INFO] time 52724 ms: Rebuild Lists done
+[INFO] time 52726 ms: Rebuild HashLists done
+[INFO] time 52727 ms: PMem Usage: 139746921728 B, 136471603 KB, 133273 MB, 130 GB
+Create 16 Sorted Collections
+Init 0 readers and 64 writers.
+----------------------------------------------------------
+       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
+           1000              0        6702000              0              0        6702000
+           2000              0        6668000              0              0       13370000
+           3000              0        6601000              0              0       19971000
+           4000              0        6586000              0              0       26557000
+           5000              0        6583000              0              0       33140000
+           6000              0        6574000              0              0       39714000
+           7000              0        6575000              0              0       46289000
+           8000              0        6574000              0              0       52863000
+           9000              0        6566000              0              0       59429000
+          10000              0        6548000              0              0       65977000
+          11000              0        6551000              0              0       72528000
+          12001              0        6533000              0              0       79061000
+          13001              0        6524000              0              0       85585000
+          14001              0        6514000              0              0       92099000
+          15001              0        6504000              0              0       98603000
+          16001              0        6492000              0              0      105095000
+          17001              0        6478000              0              0      111573000
+          18001              0        6475000              0              0      118048000
+          19001              0        6471000              0              0      124519000
+          20001              0        6455000              0              0      130974000
+          21001              0        6448000              0              0      137422000
+          22001              0        6445000              0              0      143867000
+          23002              0        6433000              0              0      150300000
+          24002              0        6427000              0              0      156727000
+          25002              0        6416000              0              0      163143000
+          26002              0        6407000              0              0      169550000
+          27002              0        6400000              0              0      175950000
+          28002              0        6386000              0              0      182336000
+          29002              0        6380000              0              0      188716000
+          30002              0        6372000              0              0      195088000
+Benchmark finished.
+finish bench
+----------------------------------------------------------
+Average Read Ops:	0. Average Write Ops:	6489928
+[INFO] time 82745 ms: Closing instance ... 
+[INFO] time 82745 ms: Waiting bg threads exit ... 
+[INFO] time 82796 ms: PMem Usage: 177210031232 B, 173056671 KB, 169000 MB, 165 GB
+[INFO] time 82797 ms: Cleaner Thread Num: 1
+[INFO] time 82797 ms: PMem Usage: 177210031232 B, 173056671 KB, 169000 MB, 165 GB
+[INFO] time 82798 ms: Instance closed
