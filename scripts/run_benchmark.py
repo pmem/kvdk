@@ -7,7 +7,7 @@ pmem_path = "/mnt/pmem{}/kvdk_benchmark".format(numanode)
 bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
-num_thread = 48
+num_thread = 64
 value_sizes = [24]
 # constant: value size always be "value_size",
 # random: value size uniformly distributed in [1, value_size]
