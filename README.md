@@ -1,5 +1,5 @@
 <div align="center">
-<p align="center"> <img src="pic/kvdk_logo.png" height="180px"><br></p>
+<p align="center"> <img src=".pic/kvdk_logo.png" height="180px"><br></p>
 </div>
 
 `KVDK` (Key-Value Development Kit) is a key-value store library implemented in C++ language. It is designed for supporting Optane persistent memory, DRAM and CXL memory pool. It also demonstrates several optimization methods for high performance with tiered memory. Besides providing the basic APIs of key-value store, it offers several advanced features, like read-modify-write, checkpoint, etc.
