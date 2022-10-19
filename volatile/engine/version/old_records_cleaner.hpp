@@ -14,7 +14,7 @@
 #include "../kv_engine_cleaner.hpp"
 #include "../thread_manager.hpp"
 #include "../utils/utils.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/volatile/configs.hpp"
 #include "version_controller.hpp"
 
 namespace KVDK_NAMESPACE {

@@ -16,7 +16,7 @@
 #include "../engine/kv_engine.hpp"
 #include "../engine/thread_manager.hpp"
 #include "allocator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "test_util.h"
 
 using namespace KVDK_NAMESPACE;

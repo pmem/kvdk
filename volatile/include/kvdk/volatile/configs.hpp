@@ -38,33 +38,6 @@ struct Configs {
   // degraded due to synchronization cost
   uint64_t max_access_threads = 64;
 
-  // Size of PMem space to store KV data, this is not scalable in current
-  // edition.
-  //
-  // Notice that it should be larger than (max_access_threads *
-  // pmem_segment_blocks  * pmem_block_size)
-  // TODO: sacle out
-  uint64_t pmem_file_size = (256ULL << 30);
-
-  // Populate PMem space while creating a new instance.
-  //
-  // This can improve write performance in runtime, but will take long time to
-  // init the newly created instance.
-  bool populate_pmem_space = true;
-
-  // The minimum allocation unit of PMem space
-  //
-  // It should minimum align to kMinMemoryBlockSize (see types.hpp) bytes.
-  uint32_t pmem_block_size = 64;
-
-  // The number of blocks in a PMem segment
-  //
-  // A PMem segment is a piece of private space of a access thread, so each
-  // thread can allocate space without contention. It also decides the max size
-  // of (key + value), which is slightly smaller than
-  // (pmem_block_size * pmem_segment_blocks)
-  uint64_t pmem_segment_blocks = 2 * 1024 * 1024;
-
   // The number of bucket groups in the hash table.
   //
   // It should be 2^n and should smaller than 2^32.
@@ -83,36 +56,15 @@ struct Configs {
 
   // Time interval to do background work in seconds
   //
-  // In KVDK, a background thread will regularly organize PMem free space,
+  // In KVDK, a background thread will regularly organize free space,
   // frequent execution will lead to better space utilization, but more
   // influence to foreground performance
   double background_work_interval = 5.0;
 
-  // Time interval that the background thread report PMem usage by GlobalLogger.
-  // report_memory_usage_interval less than background_work_interval will be
-  // ignored.
+  // Time interval that the background thread report memory usage by
+  // GlobalLogger. report_memory_usage_interval less than
+  // background_work_interval will be ignored.
   double report_memory_usage_interval = 1000000.0;
-
-  // Support the devdax model with PMem
-  //
-  // The devdax mode will create a char device on a pmem region, we will
-  // use mmap to operator the devdax device.
-  bool use_devdax_mode = false;
-
-  // Store the immutable config and batch-write stats on devdax mode
-  //
-  // To use the config, you must create the devdax namespace with the shell
-  // scripts/init_devdax.sh.
-  // The shell will create a devdax namespace and a 32MB(the minum size of
-  // fsdax) fsdax namespace, and the fsdax namespace will mount on this dir.
-  //
-  // ps:
-  // If you want change the dir, you need change the scripts/init_devdax.sh's
-  // fsdax mount dir, and this dir should be same with shell's fsdax dir.
-  //
-  // TODO(zhg): organize the immutable config and pending_batch_dir on a same
-  // file of the data file.
-  std::string devdax_meta_dir = "/mnt/kvdk-pmem-meta";
 
   // Log information to show
   LogLevel log_level = LogLevel::Info;

@@ -9,8 +9,8 @@
 #include <string>
 
 #include "data_record.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/volatile/configs.hpp"
+#include "kvdk/volatile/types.hpp"
 #include "logger.hpp"
 
 namespace KVDK_NAMESPACE {

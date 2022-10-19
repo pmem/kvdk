@@ -16,7 +16,7 @@
 #include "../engine/logger.hpp"
 #include "../engine/thread_manager.hpp"
 #include "gtest/gtest.h"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "pmem_allocator/free_list.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "test_util.h"

@@ -5,7 +5,7 @@
 // This is a example of single-thread redis zset implementation with kvdk c api
 
 #include "assert.h"
-#include "kvdk/engine.h"
+#include "kvdk/persistent/engine.h"
 #include "malloc.h"
 #include "string.h"
 

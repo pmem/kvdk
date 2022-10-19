@@ -19,7 +19,7 @@
 #include "../structures.hpp"
 #include "../utils/utils.hpp"
 #include "../write_batch_impl.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "rebuilder.hpp"
 
 namespace KVDK_NAMESPACE {

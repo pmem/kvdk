@@ -15,9 +15,9 @@ namespace KVDK_NAMESPACE {
 enum class PointerType : uint8_t {
   // Value uninitialized considered as Invalid
   Invalid = 0,
-  // Point to a string record on PMem
+  // Point to a string record
   StringRecord = 1,
-  // Point to a doubly linked record on PMem
+  // Point to a doubly linked record
   DLRecord = 2,
   // Point to a dram skiplist node object
   SkiplistNode = 3,

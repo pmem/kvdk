@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 
 #define DEBUG  // For assert
 
@@ -417,11 +417,8 @@ int main() {
   kvdk::Configs engine_configs;
   {
     // Configure for a tiny KVDK instance.
-    // Approximately 10MB /mnt/pmem0/ space is needed.
     // Please refer to "Configuration" section in user documentation for
     // details.
-    engine_configs.pmem_file_size = (1ull << 20);
-    engine_configs.pmem_segment_blocks = (1ull << 8);
     engine_configs.hash_bucket_num = (1ull << 10);
   }
   std::string engine_path{pmem_path};

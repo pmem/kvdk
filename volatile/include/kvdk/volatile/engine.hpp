@@ -68,7 +68,7 @@ class Engine {
   // Return:
   // Status Ok on success .
   // Status::WrongType if key exists but is a collection.
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status Put(const StringView key, const StringView value,
                      const WriteOptions& options = WriteOptions()) = 0;
 
@@ -84,7 +84,7 @@ class Engine {
   // Return:
   // Status::Ok on success or the "key" did not exist
   // Status::WrongType if key exists but is a collection type
-  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status Delete(const StringView key) = 0;
 
   // Modify value of existing key in the engine
@@ -109,7 +109,7 @@ class Engine {
   // Return:
   // Status::Ok on success
   // Status::NotFound if a collection operated by the batch does not exist
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted
+  // Status::MemoryOverflow if DRAM exhausted.
   //
   // Notice:
   // BatchWrite has no isolation guaranteed, if you need it, you should use
@@ -152,7 +152,7 @@ class Engine {
   // Status::Ok on success
   // Status::Existed if sorted collection already existed
   // Status::WrongType if collection existed but not a sorted collection
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status SortedCreate(
       const StringView collection,
       const SortedCollectionConfigs& configs = SortedCollectionConfigs()) = 0;
@@ -177,7 +177,7 @@ class Engine {
   // Status::Ok on success.
   // Status::NotFound if collection not exist.
   // Status::WrongType if collection exists but is not a sorted collection.
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status SortedPut(const StringView collection, const StringView key,
                            const StringView value) = 0;
 
@@ -195,7 +195,7 @@ class Engine {
   // Status::Ok on success or key not existed in collection
   // Status::NotFound if collection not exist
   // Status::WrongType if collection exists but is not a sorted collection.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status SortedDelete(const StringView collection,
                               const StringView key) = 0;
 
@@ -230,7 +230,7 @@ class Engine {
   // Return:
   // Status::WrongType if list name existed but is not a List.
   // Status::Existed if a List named list already exists.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::Ok if successfully created the List.
   virtual Status ListCreate(StringView list) = 0;
 
@@ -238,7 +238,7 @@ class Engine {
   // Return:
   // Status::WrongType if list name is not a List.
   // Status::Ok if successfully destroyed the List or the List not existed
-  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status ListDestroy(StringView list) = 0;
 
   // Total elements in List.
@@ -253,7 +253,7 @@ class Engine {
   // Return:
   // Status::InvalidDataSize if list name or elem is too long
   // Status::WrongType if list name is not a List.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::Ok if operation succeeded.
   virtual Status ListPushFront(StringView list, StringView elem) = 0;
 
@@ -261,7 +261,7 @@ class Engine {
   // Return:
   // Status::InvalidDataSize if list name or elem is too long
   // Status::WrongType if list name in the instance is not a List.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::Ok if operation succeeded.
   virtual Status ListPushBack(StringView list, StringView elem) = 0;
 
@@ -285,7 +285,7 @@ class Engine {
   // Return:
   // Status::InvalidDataSize if list name or elem is too long
   // Status::WrongType if list is not a List.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::Ok if operation succeeded.
   virtual Status ListBatchPushFront(StringView list,
                                     std::vector<std::string> const& elems) = 0;
@@ -296,7 +296,7 @@ class Engine {
   // Return:
   // Status::InvalidDataSize if list or elem is too long
   // Status::WrongType if list name is not a List.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::Ok if operation succeeded.
   virtual Status ListBatchPushBack(StringView list,
                                    std::vector<std::string> const& elems) = 0;
@@ -344,7 +344,7 @@ class Engine {
   // Insert an element before element "pos" in list "collection"
   // Return:
   // Status::InvalidDataSize if elem is too long.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::NotFound if List of the ListIterator has expired or been
   // deleted, or "pos" not exist in the list
   // Status::Ok if operation succeeded.
@@ -354,7 +354,7 @@ class Engine {
   // Insert an element after element "pos" in list "collection"
   // Return:
   // Status::InvalidDataSize if elem is too long.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   // Status::NotFound if List of the ListIterator has expired or been
   // deleted, or "pos" not exist in the list
   // Status::Ok if operation succeeded.
@@ -407,14 +407,14 @@ class Engine {
   // Status::Ok on success
   // Status::Existed if hash collection already existed
   // Status::WrongType if collection existed but not a hash collection
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status HashCreate(StringView collection) = 0;
 
   // Destroy a hash collection
   // Return:
   // Status::Ok on success
   // Status::WrongType if collection existed but not a hash collection
-  // Status::PMemOverflow if PMem exhausted
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status HashDestroy(StringView collection) = 0;
 
   // Get number of elements in a hash collection
@@ -438,7 +438,7 @@ class Engine {
   // Status::Ok on success.
   // Status::NotFound if collection not exist.
   // Status::WrongType if collection exists but is not a hash collection.
-  // Status::PMemOverflow/Status::MemoryOverflow if PMem/DRAM exhausted.
+  // Status::MemoryOverflow if DRAM exhausted
   virtual Status HashPut(StringView collection, StringView key,
                          StringView value) = 0;
 
@@ -448,7 +448,7 @@ class Engine {
   // Status::Ok on success or key not existed in collection
   // Status::NotFound if collection not exist
   // Status::WrongType if collection exists but is not a hash collection.
-  // Status::PMemOverflow if PMem exhausted.
+  // Status::MemoryOverflow if DRAM exhausted.
   virtual Status HashDelete(StringView collection, StringView key) = 0;
 
   // Modify value of a existing key in a hash collection

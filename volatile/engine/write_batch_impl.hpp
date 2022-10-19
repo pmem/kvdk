@@ -8,7 +8,7 @@
 
 #include "alias.hpp"
 #include "hash_table.hpp"
-#include "kvdk/write_batch.hpp"
+#include "kvdk/volatile/write_batch.hpp"
 #include "utils/codec.hpp"
 #include "utils/utils.hpp"
 

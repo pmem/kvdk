@@ -1,5 +1,5 @@
 <div align="center">
-<p align="center"> <img src="../pic/kvdk_logo.png" height="180px"><br></p>
+<p align="center"> <img src="../.pic/kvdk_logo.png" height="180px"><br></p>
 </div>
 
 This is the persistent module of `kvdk` based on Intel Optane Persistent Memory.

@@ -7,7 +7,7 @@
 #include "../alias.hpp"
 #include "../allocator.hpp"
 #include "../thread_manager.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/volatile/configs.hpp"
 
 namespace KVDK_NAMESPACE {
 constexpr TimestampType kMaxTimestamp = UINT64_MAX;

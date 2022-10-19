@@ -87,7 +87,6 @@ set(SOURCES
         engine/logger.cpp
         engine/hash_table.cpp
         engine/sorted_collection/skiplist.cpp
-        engine/sorted_collection/rebuilder.cpp
         engine/hash_collection/hash_list.cpp
         engine/list_collection/list.cpp
         engine/write_batch_impl.cpp
@@ -170,7 +169,7 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/volatile/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)
 

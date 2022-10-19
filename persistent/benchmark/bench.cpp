@@ -11,8 +11,8 @@
 #include <thread>
 
 #include "generator.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/persistent/engine.hpp"
+#include "kvdk/persistent/types.hpp"
 
 using namespace google;
 using namespace KVDK_NAMESPACE;

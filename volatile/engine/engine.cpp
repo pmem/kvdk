@@ -2,7 +2,7 @@
  * Copyright(c) 2021 Intel Corporation
  */
 
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 
 #include "kv_engine.hpp"
 

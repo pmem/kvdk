@@ -19,7 +19,7 @@
 #include "backup_log.hpp"
 #include "dram_allocator.hpp"
 #include "hash_collection/iterator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "list_collection/iterator.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"
@@ -517,45 +517,6 @@ Status KVEngine::restoreDataFromBackup(const std::string& backup_log) {
     }
   }
   GlobalLogger.Info("Restore %lu records from backup log\n", cnt);
-  return Status::Ok;
-}
-
-Status KVEngine::checkPMemConfigs(const Configs& configs) {
-  if (configs.pmem_block_size < kMinMemoryBlockSize) {
-    GlobalLogger.Error("pmem block size too small\n");
-    return Status::InvalidConfiguration;
-  }
-
-  if (configs.pmem_segment_blocks * configs.pmem_block_size < 1024) {
-    GlobalLogger.Error("pmem segment size too small\n");
-    return Status::InvalidConfiguration;
-  }
-
-  if (configs.pmem_file_size % configs.pmem_block_size != 0) {
-    GlobalLogger.Error(
-        "pmem file size should align to pmem block size (%d bytes)\n",
-        configs.pmem_block_size);
-    return Status::InvalidConfiguration;
-  }
-
-  auto segment_size = configs.pmem_block_size * configs.pmem_segment_blocks;
-  if (configs.pmem_file_size % segment_size != 0) {
-    GlobalLogger.Error(
-        "pmem file size should align to segment "
-        "size(pmem_segment_blocks*pmem_block_size) (%d bytes)\n",
-        segment_size);
-    return Status::InvalidConfiguration;
-  }
-
-  if (configs.pmem_segment_blocks * configs.pmem_block_size *
-          configs.max_access_threads >
-      configs.pmem_file_size) {
-    GlobalLogger.Error(
-        "pmem file too small, should larger than pmem_segment_blocks * "
-        "pmem_block_size * max_access_threads\n");
-    return Status::InvalidConfiguration;
-  }
-
   return Status::Ok;
 }
 

@@ -19,33 +19,8 @@ public class Configs extends KVDKObject {
         return this;
     }
 
-    /**
-     * @param size PMem file size should be larger than: pmem_segment_blocks * pmem_block_size *
-     *     max_access_threads
-     * @return
-     */
-    public Configs setPMemFileSize(final long size) {
-        setPMemFileSize(nativeHandle_, size);
-        return this;
-    }
-
-    public Configs setPMemSegmentBlocks(final long blocks) {
-        setPMemSegmentBlocks(nativeHandle_, blocks);
-        return this;
-    }
-
     public Configs setHashBucketNum(final long num) {
         setHashBucketNum(nativeHandle_, num);
-        return this;
-    }
-
-    public Configs setPopulatePMemSpace(final boolean populate) {
-        setPopulatePMemSpace(nativeHandle_, populate);
-        return this;
-    }
-
-    public Configs setEnablePMem(final boolean enable) {
-        setEnablePMem(nativeHandle_, enable);
         return this;
     }
 
@@ -74,15 +49,7 @@ public class Configs extends KVDKObject {
 
     private native void setMaxAccessThreads(long handle, long num);
 
-    private native void setPMemFileSize(long handle, long size);
-
-    private native void setPMemSegmentBlocks(long handle, long blocks);
-
     private native void setHashBucketNum(long handle, long num);
-
-    private native void setPopulatePMemSpace(long handle, boolean populate);
-
-    private native void setEnablePMem(long handle, boolean enable);
 
     private native void setDestMemoryNodes(long handle, String nodes);
 

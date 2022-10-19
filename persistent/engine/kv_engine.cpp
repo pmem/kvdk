@@ -21,7 +21,7 @@
 #include "configs.hpp"
 #include "dram_allocator.hpp"
 #include "hash_collection/iterator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "list_collection/iterator.hpp"
 #include "sorted_collection/iterator.hpp"
 #include "structures.hpp"

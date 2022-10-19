@@ -6,8 +6,8 @@
 
 #include "../version/version_controller.hpp"
 #include "hash_list.hpp"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
+#include "kvdk/volatile/engine.hpp"
+#include "kvdk/volatile/iterator.hpp"
 
 namespace KVDK_NAMESPACE {
 class KVEngine;

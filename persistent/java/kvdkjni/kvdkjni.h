@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "kvdkjni/cplusplus_to_java_convert.h"
 
 namespace KVDK_NAMESPACE {

@@ -8,11 +8,11 @@
 #include <regex>
 
 #include "../alias.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/engine.h"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
-#include "kvdk/write_batch.hpp"
+#include "kvdk/volatile/configs.hpp"
+#include "kvdk/volatile/engine.h"
+#include "kvdk/volatile/engine.hpp"
+#include "kvdk/volatile/iterator.hpp"
+#include "kvdk/volatile/write_batch.hpp"
 
 using kvdk::StringView;
 

@@ -1,5 +1,5 @@
 <div align="center">
-<p align="center"> <img src="../pic/kvdk_logo.png" height="180px"><br></p>
+<p align="center"> <img src="../.pic/kvdk_logo.png" height="180px"><br></p>
 </div>
 
 This is the volatile module of `kvdk`, data stored on local DRAM. **This module is in development**.

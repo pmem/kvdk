@@ -17,8 +17,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "kvdk/engine.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/volatile/engine.hpp"
+#include "kvdk/volatile/types.hpp"
 #include "test_util.h"
 
 DEFINE_bool(
@@ -423,10 +423,7 @@ class EngineTestBase : public testing::Test {
   /// The following parameters are used to configure the test.
   /// Override SetUpParameters to provide different parameters
   /// Default configure parameters
-  bool do_populate_when_initialize;
-  size_t sz_pmem_file;
   size_t n_hash_bucket;
-  size_t n_blocks_per_segment;
   size_t t_background_work_interval;
 
   /// Test specific parameters
@@ -469,10 +466,7 @@ class EngineTestBase : public testing::Test {
 
     SetUpParameters();
 
-    configs.populate_pmem_space = do_populate_when_initialize;
-    configs.pmem_file_size = sz_pmem_file;
     configs.hash_bucket_num = n_hash_bucket;
-    configs.pmem_segment_blocks = n_blocks_per_segment;
     configs.background_work_interval = t_background_work_interval;
     configs.max_access_threads = n_thread + 1;
     configs.log_level = kvdk::LogLevel::Debug;
@@ -696,12 +690,8 @@ class EngineStressTest : public EngineTestBase {
  protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
-    do_populate_when_initialize = false;
-    // 64GB PMem
-    sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
-    n_blocks_per_segment = (1ULL << 10);
     t_background_work_interval = 1;
 
     /// Test specific parameters
@@ -844,12 +834,8 @@ class EngineHotspotTest : public EngineTestBase {
  protected:
   virtual void SetUpParameters() override final {
     /// Default configure parameters
-    do_populate_when_initialize = false;
-    // 64GB PMem
-    sz_pmem_file = (64ULL << 30);
     // Less buckets to increase hash collisions
     n_hash_bucket = (1ULL << 20);
-    n_blocks_per_segment = (1ULL << 20);
     t_background_work_interval = 1;
 
     /// Test specific parameters

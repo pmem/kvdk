@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "alias.hpp"
-#include "kvdk/transaction.hpp"
+#include "kvdk/persistent/transaction.hpp"
 #include "write_batch_impl.hpp"
 
 namespace KVDK_NAMESPACE {

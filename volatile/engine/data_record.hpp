@@ -8,7 +8,7 @@
 #include <x86intrin.h>
 
 #include "alias.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/volatile/configs.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {

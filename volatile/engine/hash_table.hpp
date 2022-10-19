@@ -13,7 +13,7 @@
 #include "allocator.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "structures.hpp"
 
 namespace KVDK_NAMESPACE {

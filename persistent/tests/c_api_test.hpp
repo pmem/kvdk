@@ -10,7 +10,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "kvdk/engine.h"
+#include "kvdk/persistent/engine.h"
 #include "test_util.h"
 
 class EngineCAPITestBase : public testing::Test {

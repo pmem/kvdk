@@ -12,7 +12,7 @@
 #include "alias.hpp"
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "structures.hpp"
 

@@ -18,8 +18,8 @@ or how to reopen an existing KVDK instance at the path supplied.
 (In the following example, PMem is mounted as /mnt/pmem0/ and the KVDK instance is named tutorial_kvdk_example.)
 
 ```c++
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/persistent/engine.hpp"
+#include "kvdk/persistent/namespace.hpp"
 #include <algorithm>
 #include <cassert>
 #include <random>

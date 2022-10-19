@@ -6,7 +6,7 @@
 
 #include "collection.hpp"
 #include "data_record.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/persistent/types.hpp"
 #include "lock_table.hpp"
 #include "pmem_allocator/pmem_allocator.hpp"
 #include "utils/sync_point.hpp"

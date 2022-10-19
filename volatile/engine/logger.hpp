@@ -11,7 +11,7 @@
 #include <mutex>
 
 #include "alias.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/volatile/configs.hpp"
 
 #define DO_LOG 1
 

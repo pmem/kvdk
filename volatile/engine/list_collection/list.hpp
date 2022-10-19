@@ -6,7 +6,7 @@
 
 #include "../dl_list.hpp"
 #include "../logger.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/volatile/types.hpp"
 
 namespace KVDK_NAMESPACE {
 class ListIteratorImpl;

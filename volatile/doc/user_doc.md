@@ -18,8 +18,8 @@ or how to reopen an existing KVDK instance at the path supplied.
 (In the following example, PMem is mounted as /mnt/pmem0/ and the KVDK instance is named tutorial_kvdk_example.)
 
 ```c++
-#include "kvdk/engine.hpp"
-#include "kvdk/namespace.hpp"
+#include "kvdk/volatile/engine.hpp"
+#include "kvdk/volatile/namespace.hpp"
 #include <algorithm>
 #include <cassert>
 #include <random>
@@ -39,11 +39,8 @@ int main()
     kvdk::Configs engine_configs;
     {
       // Configure for a tiny KVDK instance.
-      // Approximately 10MB /mnt/pmem0/ space is needed.
       // Please refer to "Configuration" section in user documentation for
       // details.
-      engine_configs.pmem_file_size = (1ull << 20);
-      engine_configs.pmem_segment_blocks = (1ull << 8);
       engine_configs.hash_bucket_num = (1ull << 10);
     }
     // The KVDK instance is mounted as a directory
@@ -422,24 +419,6 @@ You can call KVDK API with any number of threads, but if your parallel threads m
 
 ### Clean Threads
 KVDK reclaim space of updated/deleted data in background with dynamic number of clean threads, you can specify max clean thread number with `kvdk::Configs::clean_threads`. Defaulted to 8, you can config more clean threads in delete intensive workloads to avoid space be exhausted.
-
-### PMem File Size
-`kvdk::Configs::pmem_file_size` specifies the space allocated to a KVDK instance. Defaulted to 2^38Bytes = 256GB.
-
-### Populate PMem Space
-Specified by `kvdk::Configs::populate_pmem_space`. When set to true to populate pmem space while creating a new instance, KVDK will take extra time to set up. This will improve runtime performance.
-
-### Block Size
-Specified by `kvdk::Configs::pmem_block_size`. Defaulted to 64(Bytes) to align with cache-line. 
-
-**This parameter is immutable after initialization of the KVDK instance.**
-
-### Blocks per Segment
-Specified by `kvdk::Configs::pmem_segment_blocks`. Defaulted to 2^21. Segment size determines the maximum size for a KV-Pair. 
-
-Default Blocks per Segment and Block Size parameters will limit the size for a KV-Pair to 64MB(Actually slightly smaller than 64MB, for checksum and other information associated with the KV-Pair).
-
-User is suggested to adjust this parameter instead of `kvdk::Configs::pmem_block_size`.
 
 **This parameter is immutable after initialization of the KVDK instance.**
 

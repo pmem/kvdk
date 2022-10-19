@@ -242,9 +242,7 @@ public class KVDKBenchmark {
     private void initKVDKEngine() throws KVDKException {
         Configs configs = new Configs();
 
-        configs.setPopulatePMemSpace(populate);
         configs.setMaxAccessThreads(maxAccessThreads);
-        configs.setPMemFileSize(space);
         configs.setOptLargeSortedCollectionRecovery(optLargeSortedCollectionRestore);
         configs.setUseDevDaxMode(useDevdaxMode);
         configs.setHashBucketNum(hashBucketNum);

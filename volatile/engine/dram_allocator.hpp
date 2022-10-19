@@ -12,7 +12,7 @@
 
 #include "alias.hpp"
 #include "allocator.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "logger.hpp"
 #include "macros.hpp"
 #include "structures.hpp"

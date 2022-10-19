@@ -5,7 +5,7 @@
 // This is a example of single-thread redis zset implementation with kvdk c api
 
 #include "assert.h"
-#include "kvdk/engine.h"
+#include "kvdk/volatile/engine.h"
 #include "malloc.h"
 #include "string.h"
 
@@ -261,10 +261,8 @@ void ZSetTest(KVDKEngine* engine) {
 
 int main() {
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
-  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 1ull << 10,
-                 1 << 4);
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 10, 1 << 4);
   const char* engine_path = "/mnt/pmem0/kvdk_zset_example";
-  KVDKRemovePMemContents(engine_path);
   KVDKEngine* kvdk_engine;
   KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);
   assert(s == Ok);

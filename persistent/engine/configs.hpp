@@ -5,7 +5,7 @@
 #pragma once
 
 #include "alias.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/persistent/configs.hpp"
 
 namespace KVDK_NAMESPACE {
 

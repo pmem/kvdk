@@ -25,7 +25,7 @@
 #include "hash_collection/hash_list.hpp"
 #include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "list_collection/list.hpp"
 #include "list_collection/rebuilder.hpp"
 #include "lock_table.hpp"

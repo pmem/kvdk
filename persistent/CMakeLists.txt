@@ -156,7 +156,7 @@ add_cppstyle(src ${CMAKE_CURRENT_SOURCE_DIR}/engine/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/engine/utils/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/examples/tutorial/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmark/*.c*
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/*.h*
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/kvdk/persistent/*.h*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c*
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h*)
 

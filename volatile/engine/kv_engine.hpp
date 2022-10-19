@@ -23,14 +23,11 @@
 #include "data_record.hpp"
 #include "dram_allocator.hpp"
 #include "hash_collection/hash_list.hpp"
-#include "hash_collection/rebuilder.hpp"
 #include "hash_table.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "list_collection/list.hpp"
-#include "list_collection/rebuilder.hpp"
 #include "lock_table.hpp"
 #include "logger.hpp"
-#include "sorted_collection/rebuilder.hpp"
 #include "sorted_collection/skiplist.hpp"
 #include "structures.hpp"
 #include "thread_manager.hpp"
@@ -41,8 +38,6 @@
 
 namespace KVDK_NAMESPACE {
 class KVEngine : public Engine {
-  friend class SortedCollectionRebuilder;
-
  public:
   ~KVEngine();
 
@@ -426,7 +421,6 @@ class KVEngine : public Engine {
   Status hashListPublish(HashWriteArgs const& args);
 
   /// Other
-  Status checkPMemConfigs(const Configs& configs);
   Status checkGeneralConfigs(const Configs& configs);
 
   void purgeAndFreeStringRecords(const std::vector<StringRecord*>& old_offset);

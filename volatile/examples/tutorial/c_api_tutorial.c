@@ -7,7 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "kvdk/engine.h"
+#include "kvdk/volatile/engine.h"
 
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.
@@ -724,12 +724,9 @@ void HashModifyExample(KVDKEngine* engine) {
 int main() {
   // Initialize a KVDK instance.
   KVDKConfigs* kvdk_configs = KVDKCreateConfigs();
-  KVDKSetConfigs(kvdk_configs, 48, 1ull << 20, 1u, 64u, 1ull << 8, 1ull << 10,
-                 1 << 4);
+  KVDKSetConfigs(kvdk_configs, 48, 1ull << 10, 1 << 4);
 
   const char* engine_path = "/mnt/pmem0/tutorial_kvdk_example";
-  // Purge old KVDK instance
-  KVDKRemovePMemContents(engine_path);
   // open engine
   KVDKEngine* kvdk_engine;
   KVDKStatus s = KVDKOpen(engine_path, kvdk_configs, stdout, &kvdk_engine);

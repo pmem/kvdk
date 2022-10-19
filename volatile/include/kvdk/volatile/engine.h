@@ -30,10 +30,6 @@ extern void KVDKRegexDestroy(KVDKRegex* re);
 
 extern KVDKConfigs* KVDKCreateConfigs(void);
 extern void KVDKSetConfigs(KVDKConfigs* kv_config, uint64_t max_access_threads,
-                           uint64_t pmem_file_size,
-                           unsigned char populate_pmem_space,
-                           uint32_t pmem_block_size,
-                           uint64_t pmem_segment_blocks,
                            uint64_t hash_bucket_num,
                            uint32_t num_buckets_per_slot);
 extern void KVDKConfigRegisterCompFunc(
@@ -64,7 +60,6 @@ extern KVDKStatus KVDKRestore(const char* name, const char* backup_log,
                               const KVDKConfigs* config, FILE* log_file,
                               KVDKEngine** engine);
 extern void KVDKCloseEngine(KVDKEngine* engine);
-extern void KVDKRemovePMemContents(const char* name);
 extern KVDKSnapshot* KVDKGetSnapshot(KVDKEngine* engine, int make_checkpoint);
 extern void KVDKReleaseSnapshot(KVDKEngine* engine, KVDKSnapshot* snapshot);
 

@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "kvdkjni/cplusplus_to_java_convert.h"
 
 namespace KVDK_NAMESPACE {
@@ -108,26 +108,22 @@ class StatusJni : public JavaClass {
         return 0x6;
       case KVDK_NAMESPACE::Status::MemoryOverflow:
         return 0x7;
-      case KVDK_NAMESPACE::Status::PmemOverflow:
-        return 0x8;
       case KVDK_NAMESPACE::Status::NotSupported:
-        return 0x9;
-      case KVDK_NAMESPACE::Status::PMemMapFileError:
-        return 0xA;
+        return 0x8;
       case KVDK_NAMESPACE::Status::InvalidBatchSize:
-        return 0xB;
+        return 0x9;
       case KVDK_NAMESPACE::Status::InvalidDataSize:
-        return 0xC;
+        return 0xA;
       case KVDK_NAMESPACE::Status::InvalidArgument:
-        return 0xD;
+        return 0xB;
       case KVDK_NAMESPACE::Status::IOError:
-        return 0xE;
+        return 0xC;
       case KVDK_NAMESPACE::Status::InvalidConfiguration:
-        return 0xF;
+        return 0xD;
       case KVDK_NAMESPACE::Status::Fail:
-        return 0x10;
+        return 0xE;
       case KVDK_NAMESPACE::Status::Abort:
-        return 0x11;
+        return 0xF;
       default:
         return 0x7F;  // undefined
     }

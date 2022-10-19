@@ -7,7 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "kvdk/engine.h"
+#include "kvdk/persistent/engine.h"
 
 // The KVDK instance is mounted as a directory
 // /mnt/pmem0/tutorial_kvdk_example.

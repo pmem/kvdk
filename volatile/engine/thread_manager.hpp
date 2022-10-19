@@ -8,7 +8,7 @@
 #include <unordered_set>
 
 #include "alias.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {

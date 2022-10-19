@@ -10,8 +10,8 @@
 
 #include "configs.hpp"
 #include "data_record.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/persistent/configs.hpp"
+#include "kvdk/persistent/types.hpp"
 #include "logger.hpp"
 
 namespace KVDK_NAMESPACE {

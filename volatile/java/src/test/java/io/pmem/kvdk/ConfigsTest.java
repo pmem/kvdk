@@ -11,9 +11,7 @@ public class ConfigsTest {
     public void testCreateConfigs() {
         Configs configs = new Configs();
 
-        configs.setPMemSegmentBlocks(8L << 20);
         configs.setMaxAccessThreads(8);
-        configs.setPMemFileSize(10L << 30);
 
         configs.close();
     }

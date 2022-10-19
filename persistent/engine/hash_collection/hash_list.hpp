@@ -2,7 +2,7 @@
 
 #include "../dl_list.hpp"
 #include "../hash_table.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/persistent/types.hpp"
 
 namespace KVDK_NAMESPACE {
 

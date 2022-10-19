@@ -14,7 +14,7 @@
 #include "../engine/kv_engine.hpp"
 #include "../engine/pmem_allocator/pmem_allocator.hpp"
 #include "../engine/utils/sync_point.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/persistent/engine.hpp"
 #include "test_util.h"
 
 DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",

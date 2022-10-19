@@ -8,12 +8,12 @@
 #include <regex>
 
 #include "../alias.hpp"
-#include "kvdk/configs.hpp"
-#include "kvdk/engine.h"
-#include "kvdk/engine.hpp"
-#include "kvdk/iterator.hpp"
-#include "kvdk/transaction.hpp"
-#include "kvdk/write_batch.hpp"
+#include "kvdk/persistent/configs.hpp"
+#include "kvdk/persistent/engine.h"
+#include "kvdk/persistent/engine.hpp"
+#include "kvdk/persistent/iterator.hpp"
+#include "kvdk/persistent/transaction.hpp"
+#include "kvdk/persistent/write_batch.hpp"
 
 using kvdk::StringView;
 

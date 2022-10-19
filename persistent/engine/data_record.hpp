@@ -9,7 +9,7 @@
 #include <x86intrin.h>
 
 #include "alias.hpp"
-#include "kvdk/configs.hpp"
+#include "kvdk/persistent/configs.hpp"
 #include "utils/utils.hpp"
 
 namespace KVDK_NAMESPACE {

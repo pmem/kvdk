@@ -29,46 +29,12 @@ void Java_io_pmem_kvdk_Configs_setMaxAccessThreads(JNIEnv*, jobject,
 
 /*
  * Class:     io_pmem_kvdk_Configs
- * Method:    setPMemFileSize
- * Signature: (JJ)V
- */
-void Java_io_pmem_kvdk_Configs_setPMemFileSize(JNIEnv*, jobject, jlong handle,
-                                               jlong size) {
-  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->pmem_file_size = size;
-}
-
-/*
- * Class:     io_pmem_kvdk_Configs
- * Method:    setPMemSegmentBlocks
- * Signature: (JJ)V
- */
-void Java_io_pmem_kvdk_Configs_setPMemSegmentBlocks(JNIEnv*, jobject,
-                                                    jlong handle,
-                                                    jlong blocks) {
-  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->pmem_segment_blocks =
-      blocks;
-}
-
-/*
- * Class:     io_pmem_kvdk_Configs
  * Method:    setHashBucketNum
  * Signature: (JJ)V
  */
 void Java_io_pmem_kvdk_Configs_setHashBucketNum(JNIEnv*, jobject, jlong handle,
                                                 jlong num) {
   reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->hash_bucket_num = num;
-}
-
-/*
- * Class:     io_pmem_kvdk_Configs
- * Method:    setPopulatePMemSpace
- * Signature: (JZ)V
- */
-void Java_io_pmem_kvdk_Configs_setPopulatePMemSpace(JNIEnv*, jobject,
-                                                    jlong handle,
-                                                    jboolean populate) {
-  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->populate_pmem_space =
-      populate;
 }
 
 /*

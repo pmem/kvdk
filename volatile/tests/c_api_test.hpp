@@ -10,7 +10,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "kvdk/engine.h"
+#include "kvdk/volatile/engine.h"
 #include "test_util.h"
 
 class EngineCAPITestBase : public testing::Test {
@@ -22,7 +22,7 @@ class EngineCAPITestBase : public testing::Test {
   virtual void SetUp() override {
     purgeDB();
     configs = KVDKCreateConfigs();
-    KVDKSetConfigs(configs, 32, (4UL << 30), false, 64, (1UL << 20), 1024, 1);
+    KVDKSetConfigs(configs, 32, 1024, 1);
     ASSERT_EQ(KVDKOpen(db_path.c_str(), configs, stdout, &engine),
               KVDKStatus::Ok)
         << "Fail to open the KVDK instance";

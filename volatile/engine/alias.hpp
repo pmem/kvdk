@@ -6,7 +6,7 @@
 
 #include <cinttypes>
 
-#include "kvdk/types.hpp"
+#include "kvdk/volatile/types.hpp"
 
 namespace KVDK_NAMESPACE {
 enum class WriteOp { Put, Delete };

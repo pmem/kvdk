@@ -7,7 +7,7 @@
 #include "allocator.hpp"
 #include "collection.hpp"
 #include "data_record.hpp"
-#include "kvdk/types.hpp"
+#include "kvdk/volatile/types.hpp"
 #include "lock_table.hpp"
 #include "utils/sync_point.hpp"
 #include "version/version_controller.hpp"

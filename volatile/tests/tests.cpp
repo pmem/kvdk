@@ -13,7 +13,7 @@
 
 #include "../engine/kv_engine.hpp"
 #include "../engine/utils/sync_point.hpp"
-#include "kvdk/engine.hpp"
+#include "kvdk/volatile/engine.hpp"
 #include "test_util.h"
 
 DEFINE_string(path, "/mnt/pmem0/kvdk_unit_test",
@@ -49,10 +49,7 @@ class EngineBasicTest : public testing::Test {
     random_str(&str_pool[0], str_pool_length);
     // No logs by default, for debug, set it to All
     configs.log_level = LogLevel::Debug;
-    configs.pmem_file_size = (16ULL << 30);
-    configs.populate_pmem_space = false;
     configs.hash_bucket_num = (1 << 10);
-    configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
     configs.max_access_threads = 8;
@@ -1150,8 +1147,6 @@ TEST_F(EngineBasicTest, TestSeek) {
 }
 
 TEST_F(EngineBasicTest, TestStringLargeValue) {
-  configs.pmem_block_size = (1UL << 6);
-  configs.pmem_segment_blocks = (1UL << 24);
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
