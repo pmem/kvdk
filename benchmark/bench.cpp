@@ -645,7 +645,9 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create VHash"};
         }
       }
-      LaunchNThreads(FLAGS_threads, FillVHash);
+      if (!FLAGS_fill) {
+        LaunchNThreads(FLAGS_threads, FillVHash);
+      }
 #else
       throw std::runtime_error{"VHash not supported!"};
 #endif
