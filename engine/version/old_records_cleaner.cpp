@@ -9,6 +9,23 @@
 
 namespace KVDK_NAMESPACE {
 
+OldRecordsCleaner::~OldRecordsCleaner() {
+  // Clean twice to ensure all resources are released.
+  TryGlobalClean();
+  TryGlobalClean();
+  for (size_t i = 0; i < cleaner_thread_cache_.size(); i++) {
+    auto& tc = cleaner_thread_cache_[i];
+    std::lock_guard<SpinMutex> lg(tc.old_records_lock);
+    if (!tc.pending_free_space_entries.empty())
+      GlobalLogger.Error("PendingFree leaked!");
+    for (auto const& q : tc.local_queues_) {
+      if (!q.empty()) GlobalLogger.Error("DRAM leaked!");
+    }
+  }
+  if (!global_pending_free_space_entries_.empty())
+    GlobalLogger.Error("PendingFree leaked!");
+}
+
 void OldRecordsCleaner::RegisterDelayDeleter(IDeleter& deleter) {
   size_t idx = global_queues_.size();
   delay_deleters_[&deleter] = idx;
