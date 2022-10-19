@@ -12,8 +12,8 @@ namespace KVDK_NAMESPACE {
 /// TODO: Add hpmap_alloc to allocate memory for hashptr_maps.
 class VHashGroup {
  private:
-  OldRecordsCleaner& cleaner;
   IVolatileAllocator& kv_alloc;
+  OldRecordsCleaner& cleaner;
   VHashKVBuilder kvb{kv_alloc, cleaner};
   VHashBuilder vhb{cleaner};
 

@@ -367,6 +367,7 @@ void DBScan(int tid) {
             operations_counted = operations;
           }
         }
+        break;
       }
       case DataType::Blackhole: {
         operations += 1024;
@@ -548,7 +549,7 @@ void ProcessBenchmarkConfigs() {
   if (bench_data_type == DataType::VHash) {
     // Vhash needs fill for read and update benchmarks
     operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
-    for (int i = 0; i < FLAGS_max_access_threads; i++) {
+    for (size_t i = 0; i < FLAGS_max_access_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }

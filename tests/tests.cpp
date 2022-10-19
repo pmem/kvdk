@@ -1950,7 +1950,7 @@ TEST_F(EngineBasicTest, TestVHash) {
     ASSERT_EQ(len, cnt);
   };
 
-  auto VIterate = [&](size_t tid) {
+  auto VIterate = [&](size_t) {
     umap combined;
     for (size_t tid = 0; tid < num_threads; tid++) {
       umap const& local_copy = local_copies[tid];
