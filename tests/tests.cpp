@@ -1935,6 +1935,95 @@ TEST_F(EngineBasicTest, TestHash) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestVHash) {
+  size_t num_threads = 1;
+  size_t count = 1000;
+  configs.max_access_threads = num_threads + 1;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key{"VHash"};
+  ASSERT_EQ(engine->VHashCreate(key), Status::Ok);
+  ASSERT_EQ(engine->VHashDestroy(key), Status::Ok);
+  ASSERT_EQ(engine->VHashCreate(key), Status::Ok);
+  using umap = std::unordered_map<std::string, std::string>;
+  std::vector<umap> local_copies(num_threads);
+  std::mutex mu;
+
+  auto VPut = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    for (size_t j = 0; j < count; j++) {
+      std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
+      std::string value{GetRandomString(120)};
+      ASSERT_EQ(engine->VHashPut(key, field, value), Status::Ok);
+      local_copy[field] = value;
+    }
+  };
+
+  auto VGet = [&](size_t tid) {
+    umap const& local_copy = local_copies[tid];
+    for (auto const& kv : local_copy) {
+      std::string resp;
+      ASSERT_EQ(engine->VHashGet(key, kv.first, &resp), Status::Ok);
+      ASSERT_EQ(resp, kv.second) << "Field:\t" << kv.first << "\n";
+    }
+  };
+
+  auto VDelete = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    std::string sink;
+    for (size_t i = 0; i < count / 2; i++) {
+      auto iter = local_copy.begin();
+      ASSERT_EQ(engine->VHashDelete(key, iter->first), Status::Ok);
+      ASSERT_EQ(engine->VHashGet(key, iter->first, &sink), Status::NotFound);
+      local_copy.erase(iter);
+    }
+  };
+
+  auto VSize = [&](size_t) {
+    size_t len = 0;
+    ASSERT_EQ(engine->VHashSize(key, &len), Status::Ok);
+    size_t cnt = 0;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      cnt += local_copies[tid].size();
+    }
+    ASSERT_EQ(len, cnt);
+  };
+
+  auto VIterate = [&](size_t tid) {
+    umap combined;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      umap const& local_copy = local_copies[tid];
+      for (auto const& kv : local_copy) {
+        combined[kv.first] = kv.second;
+      }
+    }
+
+    auto iter = engine->VHashIteratorCreate(key);
+
+    ASSERT_NE(iter, nullptr);
+    size_t cnt = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ++cnt;
+      ASSERT_EQ(combined[iter->Key()], iter->Value());
+    }
+    ASSERT_EQ(cnt, combined.size());
+  };
+
+  for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, VPut);
+    LaunchNThreads(num_threads, VGet);
+    LaunchNThreads(num_threads, VDelete);
+    LaunchNThreads(num_threads, VIterate);
+    LaunchNThreads(num_threads, VSize);
+    LaunchNThreads(num_threads, VPut);
+    LaunchNThreads(num_threads, VGet);
+    LaunchNThreads(num_threads, VDelete);
+    LaunchNThreads(num_threads, VIterate);
+    LaunchNThreads(num_threads, VSize);
+  }
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestStringHotspot) {
   size_t n_thread_reading = 16;
   size_t n_thread_writing = 16;
