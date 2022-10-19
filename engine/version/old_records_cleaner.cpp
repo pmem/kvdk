@@ -18,8 +18,8 @@ void OldRecordsCleaner::RegisterDelayDeleter(IDeleter& deleter) {
 }
 
 void OldRecordsCleaner::DelayDelete(IDeleter& deleter, void* obj) {
-  kvdk_assert(access_thread.id >= 0, "");
-  auto& tc = cleaner_thread_cache_[access_thread.id];
+  kvdk_assert(this_thread.id >= 0, "");
+  auto& tc = cleaner_thread_cache_[this_thread.id];
   std::lock_guard<SpinMutex> guard{tc.old_records_lock};
 
   TimestampType ts = kv_engine_->version_controller_.GetCurrentTimestamp();
