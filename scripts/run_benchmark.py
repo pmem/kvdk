@@ -8,13 +8,14 @@ bin = "../build/bench"
 exec = "numactl --cpunodebind={0} --membind={0} {1}".format(numanode, bin)
 
 num_thread = 64
-value_sizes = [120]
+value_sizes = [24]
 # constant: value size always be "value_size",
 # random: value size uniformly distributed in [1, value_size]
 value_size_distributions = ['constant']
 timeout = 30                          # For operations other than fill
-populate_on_fill = 1                  # For fill only
-pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
+populate_on_fill = 0                  # For fill only
+# pmem_size = 384 * 1024 * 1024 * 1024  # we need enough space to test insert
+pmem_size = 64 * 1024 * 1024 * 1024  
 num_collection = 16
 
 benchmarks = [
@@ -44,8 +45,10 @@ if __name__ == "__main__":
         data_types = ['list']
     elif sys.argv[1] == 'blackhole':
         data_types = ['blackhole']
+    elif sys.argv[1] == 'vhash':
+        data_types = ['vhash']
     elif sys.argv[1] == 'all':
-        data_types = ['blackhole', 'string', 'sorted', 'hash', 'list']
+        data_types = ['blackhole', 'string', 'sorted', 'hash', 'list', 'vhash']
     else:
         print(usage)
         exit(1)

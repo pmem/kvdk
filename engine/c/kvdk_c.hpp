@@ -12,6 +12,7 @@
 #include "kvdk/engine.h"
 #include "kvdk/engine.hpp"
 #include "kvdk/iterator.hpp"
+#include "kvdk/transaction.hpp"
 #include "kvdk/write_batch.hpp"
 
 using kvdk::StringView;
@@ -23,6 +24,7 @@ using kvdk::ListIterator;
 using kvdk::Snapshot;
 using kvdk::SortedCollectionConfigs;
 using kvdk::SortedIterator;
+using kvdk::Transaction;
 using kvdk::WriteBatch;
 using kvdk::WriteOptions;
 
@@ -38,6 +40,10 @@ struct KVDKEngine {
 
 struct KVDKWriteBatch {
   std::unique_ptr<WriteBatch> rep;
+};
+
+struct KVDKTransaction {
+  std::unique_ptr<Transaction> rep;
 };
 
 struct KVDKSortedIterator {

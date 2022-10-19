@@ -8,14 +8,18 @@ set(KVDK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 include(${KVDK_ROOT_DIR}/cmake/functions.cmake)
 include(GNUInstallDirs)
 
-set(CMAKE_CXX_STANDARD 11)
+# set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 option(COVERAGE "code coverage" OFF)
+option(KVDK_ENABLE_VHASH "Enable experimental VHash in KVDK" ON)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mrdseed -mrdrnd -mclwb -mclflushopt")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
 elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
 elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -48,6 +52,7 @@ endif()
 set(SOURCES
         engine/c/kvdk_basic_op.cpp
         engine/c/kvdk_batch.cpp
+        engine/c/kvdk_transaction.cpp
         engine/c/kvdk_hash.cpp
         engine/c/kvdk_list.cpp
         engine/c/kvdk_sorted.cpp
@@ -68,6 +73,7 @@ set(SOURCES
         engine/hash_collection/hash_list.cpp
         engine/list_collection/list.cpp
         engine/write_batch_impl.cpp
+        engine/transaction_impl.cpp
         engine/dram_allocator.cpp
         engine/pmem_allocator/pmem_allocator.cpp
         engine/thread_manager.cpp
@@ -75,7 +81,19 @@ set(SOURCES
         engine/data_record.cpp
         engine/dl_list.cpp
         engine/version/old_records_cleaner.cpp
+        )
+        
+if (KVDK_ENABLE_VHASH)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mlzcnt -mbmi -mavx512bw -mavx512vl")
+    add_compile_definitions(KVDK_ENABLE_VHASH)
+    set(SOURCES 
+        ${SOURCES}
+        engine/kv_engine_vhash.cpp
+        engine/experimental/vhash_kv.cpp
+        engine/experimental/vhash.cpp
+        engine/experimental/vhash_group.cpp
     )
+endif()
 
 # .so library
 add_library(engine SHARED ${SOURCES})

@@ -116,20 +116,18 @@ class StatusJni : public JavaClass {
         return 0xA;
       case KVDK_NAMESPACE::Status::InvalidBatchSize:
         return 0xB;
-      case KVDK_NAMESPACE::Status::TooManyAccessThreads:
-        return 0xC;
       case KVDK_NAMESPACE::Status::InvalidDataSize:
-        return 0xD;
+        return 0xC;
       case KVDK_NAMESPACE::Status::InvalidArgument:
-        return 0xE;
+        return 0xD;
       case KVDK_NAMESPACE::Status::IOError:
-        return 0xF;
+        return 0xE;
       case KVDK_NAMESPACE::Status::InvalidConfiguration:
-        return 0x10;
+        return 0xF;
       case KVDK_NAMESPACE::Status::Fail:
-        return 0x11;
+        return 0x10;
       case KVDK_NAMESPACE::Status::Abort:
-        return 0x12;
+        return 0x11;
       default:
         return 0x7F;  // undefined
     }

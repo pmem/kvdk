@@ -14,17 +14,25 @@
 
 namespace KVDK_NAMESPACE {
 
-struct Splice;
-
 class WriteBatchImpl final : public WriteBatch {
  public:
   struct StringOp {
+    StringOp(WriteOp o, const StringView& k, const StringView& v)
+        : op(o), key(string_view_2_string(k)), value(string_view_2_string(v)) {}
+
     WriteOp op;
     std::string key;
     std::string value;
   };
 
   struct SortedOp {
+    SortedOp(WriteOp o, const StringView& c, const StringView& k,
+             const StringView& v)
+        : op(o),
+          collection(string_view_2_string(c)),
+          key(string_view_2_string(k)),
+          value(string_view_2_string(v)) {}
+
     WriteOp op;
     std::string collection;
     std::string key;
@@ -32,6 +40,13 @@ class WriteBatchImpl final : public WriteBatch {
   };
 
   struct HashOp {
+    HashOp(WriteOp o, const StringView& c, const StringView& k,
+           const StringView& v)
+        : op(o),
+          collection(string_view_2_string(c)),
+          key(string_view_2_string(k)),
+          value(string_view_2_string(v)) {}
+
     WriteOp op;
     std::string collection;
     std::string key;
@@ -59,42 +74,75 @@ class WriteBatchImpl final : public WriteBatch {
     }
   };
 
-  void StringPut(std::string const& key, std::string const& value) final {
+  void StringPut(const StringView key, const StringView value) final {
     StringOp op{WriteOp::Put, key, value};
     string_ops_.erase(op);
     string_ops_.insert(op);
   }
 
-  void StringDelete(std::string const& key) final {
+  void StringDelete(const StringView key) final {
     StringOp op{WriteOp::Delete, key, std::string{}};
     string_ops_.erase(op);
     string_ops_.insert(op);
   }
 
-  void SortedPut(std::string const& key, std::string const& field,
-                 std::string const& value) final {
-    SortedOp op{WriteOp::Put, key, field, value};
+  void SortedPut(const StringView collection, const StringView key,
+                 const StringView value) final {
+    SortedOp op{WriteOp::Put, collection, key, value};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void SortedDelete(std::string const& key, std::string const& field) final {
-    SortedOp op{WriteOp::Delete, key, field, std::string{}};
+  void SortedDelete(const StringView collection, const StringView key) final {
+    SortedOp op{WriteOp::Delete, collection, key, std::string{}};
     sorted_ops_.erase(op);
     sorted_ops_.insert(op);
   }
 
-  void HashPut(std::string const& key, std::string const& field,
-               std::string const& value) final {
-    HashOp op{WriteOp::Put, key, field, value};
+  void HashPut(const StringView collection, const StringView key,
+               const StringView value) final {
+    HashOp op{WriteOp::Put, collection, key, value};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
   }
 
-  void HashDelete(std::string const& key, std::string const& field) final {
-    HashOp op{WriteOp::Delete, key, field, std::string{}};
+  void HashDelete(const StringView collection, const StringView key) final {
+    HashOp op{WriteOp::Delete, collection, key, std::string{}};
     hash_ops_.erase(op);
     hash_ops_.insert(op);
+  }
+
+  // Get a string op from this batch
+  // if key not exist in this batch, return nullptr
+  const StringOp* StringGet(const StringView key) {
+    StringOp op{WriteOp::Put, key, ""};
+    auto iter = string_ops_.find(op);
+    if (iter == string_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a sorted op from this batch
+  // if collection key not exist in this batch, return nullptr
+  const SortedOp* SortedGet(const StringView collection, const StringView key) {
+    SortedOp op{WriteOp::Put, collection, key, ""};
+    auto iter = sorted_ops_.find(op);
+    if (iter == sorted_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
+  }
+
+  // Get a hash op from this batch
+  // if the collection key not exist in this batch, return nullptr
+  const HashOp* HashGet(const StringView collection, const StringView key) {
+    HashOp op{WriteOp::Put, collection, key, ""};
+    auto iter = hash_ops_.find(op);
+    if (iter == hash_ops_.end()) {
+      return nullptr;
+    }
+    return &(*iter);
   }
 
   void Clear() final {

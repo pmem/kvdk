@@ -141,6 +141,7 @@ def run_benchmark(
         timestamp)
     os.system("mkdir -p {}".format(report_path))
 
+    populate_on_fill = populate_on_fill if (data_type != "vhash") else 0
     # run benchmarks
     print("Run benchmarks for data type :{}, value size distribution: {}".format(
         data_type, value_size_distribution))

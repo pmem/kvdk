@@ -4,16 +4,23 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Check Java codestyle
+        run: |
+          cd java
+          mvn spotless:check
 
       - name: Get cmake
         uses: lukka/get-cmake@v3.19.2
 
       - name: Install packages
-        run: sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
+        run: |
+          sudo apt update
+          sudo apt install make clang-format-9 pkg-config g++ autoconf libtool asciidoctor libkmod-dev libudev-dev uuid-dev libjson-c-dev libkeyutils-dev pandoc libhwloc-dev libgflags-dev libtext-diff-perl bash-completion systemd wget git
 
       - name: Install ndctl
         run: |

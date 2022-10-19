@@ -275,7 +275,6 @@ public class KVDKBenchmark {
             closeableObjects.add(nameHandle);
             kvdkEngine.sortedCreate(nameHandle);
         }
-        kvdkEngine.releaseAccessThread();
     }
 
     private void startTasks() {

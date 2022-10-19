@@ -28,4 +28,20 @@ class Allocator {
   virtual SpaceEntry Allocate(uint64_t size) = 0;
   virtual void Free(const SpaceEntry& entry) = 0;
 };
+
+class IVolatileAllocator {
+ public:
+  virtual void* Allocate(size_t bytes) = 0;
+  virtual void Deallocate(void* addr, size_t bytes) = 0;
+};
+
+class CharAllocator final : public IVolatileAllocator {
+  void* Allocate(size_t n) final {
+    void* mem = ::malloc(n);
+    if (mem == nullptr) throw std::bad_alloc{};
+    return mem;
+  }
+  void Deallocate(void* addr, size_t) final { ::free(addr); }
+};
+
 }  // namespace KVDK_NAMESPACE

@@ -56,7 +56,7 @@ class EngineBasicTest : public testing::Test {
     configs.pmem_segment_blocks = 8 * 1024;
     // For faster test, no interval so it would not block engine closing
     configs.background_work_interval = 0.1;
-    configs.max_access_threads = 1;
+    configs.max_access_threads = 8;
     db_path = FLAGS_path;
     backup_path = FLAGS_path + "_backup";
     backup_log = FLAGS_path + ".backup";
@@ -119,9 +119,6 @@ class EngineBasicTest : public testing::Test {
   // Return the current configuration.
   Configs CurrentConfigs() {
     switch (config_option_) {
-      case MultiThread:
-        configs.max_access_threads = 16;
-        break;
       case OptRestore:
         configs.opt_large_sorted_collection_recovery = true;
         break;
@@ -300,7 +297,6 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(val, got_val);
     ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
-    engine->ReleaseAccessThread();
   }
 
   void testDestroy(const std::string& collection, DestroyFunc DestroyFunc,
@@ -315,7 +311,7 @@ class EngineBasicTest : public testing::Test {
     ASSERT_EQ(DestroyFunc(collection), Status::Ok);
     ASSERT_EQ(PutFunc(collection, key, val), Status::NotFound);
     ASSERT_EQ(GetFunc(collection, key, &got_val), Status::NotFound);
-    ASSERT_EQ(DeleteFunc(collection, key), Status::Ok);
+    ASSERT_EQ(DeleteFunc(collection, key), Status::NotFound);
   }
 
   void createBasicOperationTest(const std::string& collection,
@@ -358,6 +354,8 @@ class EngineBasicTest : public testing::Test {
 };
 
 class BatchWriteTest : public EngineBasicTest {};
+
+class TrasactionTest : public EngineBasicTest {};
 
 TEST_F(EngineBasicTest, TestUniqueKey) {
   std::string sorted_collection("sorted_collection");
@@ -475,8 +473,8 @@ TEST_F(EngineBasicTest, TypeOfKey) {
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::unordered_map<std::string, ValueType> key_types;
-  for (auto type : {ValueType::String, ValueType::HashSet, ValueType::List,
-                    ValueType::SortedSet}) {
+  for (auto type : {ValueType::String, ValueType::HashCollection,
+                    ValueType::List, ValueType::SortedCollection}) {
     std::string key = KVDKValueTypeString[type];
     key_types[key] = type;
     ValueType type_resp;
@@ -485,7 +483,7 @@ TEST_F(EngineBasicTest, TypeOfKey) {
         ASSERT_EQ(engine->Put(key, ""), Status::Ok);
         break;
       }
-      case ValueType::HashSet: {
+      case ValueType::HashCollection: {
         ASSERT_EQ(engine->HashCreate(key), Status::Ok);
         break;
       }
@@ -493,7 +491,7 @@ TEST_F(EngineBasicTest, TypeOfKey) {
         ASSERT_EQ(engine->ListCreate(key), Status::Ok);
         break;
       }
-      case ValueType::SortedSet: {
+      case ValueType::SortedCollection: {
         ASSERT_EQ(engine->SortedCreate(key), Status::Ok);
         break;
       }
@@ -505,33 +503,10 @@ TEST_F(EngineBasicTest, TypeOfKey) {
   delete engine;
 }
 
-TEST_F(EngineBasicTest, TestThreadManager) {
-  int max_access_threads = 1;
-  configs.max_access_threads = max_access_threads;
-  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
-            Status::Ok);
-  std::string key("k");
-  std::string val("value");
-  ASSERT_EQ(engine->Put(key, val, WriteOptions()), Status::Ok);
-
-  // Reach max access threads
-  auto s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::TooManyAccessThreads);
-  // Manually release access thread
-  engine->ReleaseAccessThread();
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  // Release access thread on thread exits
-  s = std::async(&Engine::Put, engine, key, val, WriteOptions());
-  ASSERT_EQ(s.get(), Status::Ok);
-  delete engine;
-}
-
 // Test iterator/backup/checkpoint on a snapshot
 TEST_F(EngineBasicTest, TestBasicSnapshot) {
   uint32_t num_threads = 16;
   int count = 100;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -545,7 +520,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list), Status::Ok);
-  engine->ReleaseAccessThread();
 
   bool snapshot_done(false);
   std::atomic_uint64_t set_finished_threads(0);
@@ -572,7 +546,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
     }
     // Wait snapshot done
     set_finished_threads.fetch_add(1);
-    engine->ReleaseAccessThread();
     {
       std::unique_lock<SpinMutex> ul(spin);
       while (!snapshot_done) {
@@ -625,7 +598,6 @@ TEST_F(EngineBasicTest, TestBasicSnapshot) {
   ASSERT_EQ(engine->SortedCreate(sorted_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->HashCreate(hash_collection_after_snapshot), Status::Ok);
   ASSERT_EQ(engine->ListCreate(list_after_snapshot), Status::Ok);
-  engine->ReleaseAccessThread();
   {
     std::lock_guard<SpinMutex> ul(spin);
     snapshot_done = true;
@@ -865,7 +837,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
   int num_threads = 16;
   int ops_per_thread = 1000;
   uint64_t incr_by = 5;
-  configs.max_access_threads = num_threads;
 
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -873,7 +844,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
   std::string wrong_value_key = "wrong_value";
   ASSERT_EQ(engine->Put(wrong_value_key, std::string(10, 'a')), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto TestModify = [&](int) {
     IncNArgs args{5, 0};
@@ -897,7 +867,6 @@ TEST_F(EngineBasicTest, TestStringModify) {
 
 TEST_F(BatchWriteTest, Sorted) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
     ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
               Status::Ok);
@@ -979,7 +948,6 @@ TEST_F(BatchWriteTest, Sorted) {
 
 TEST_F(BatchWriteTest, String) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -1050,7 +1018,6 @@ TEST_F(BatchWriteTest, String) {
 
 TEST_F(BatchWriteTest, Hash) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -1198,7 +1165,6 @@ TEST_F(EngineBasicTest, TestSeek) {
 
 TEST_F(EngineBasicTest, TestStringRestore) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   // insert and delete some keys, then re-insert some deleted keys
@@ -1278,7 +1244,6 @@ TEST_F(EngineBasicTest, TestStringLargeValue) {
 
 TEST_F(EngineBasicTest, TestSortedRestore) {
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   for (int opt_large_sorted_collection_recovery : {0, 1}) {
     for (int index_with_hashtable : {0, 1}) {
       SortedCollectionConfigs s_configs;
@@ -1337,7 +1302,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
       GlobalLogger.Debug(
           "Restore with opt_large_sorted_collection_restore: %d\n",
           opt_large_sorted_collection_recovery);
-      configs.max_access_threads = num_threads;
       configs.opt_large_sorted_collection_recovery =
           opt_large_sorted_collection_recovery;
       // reopen and restore engine and try gets
@@ -1454,7 +1418,6 @@ TEST_F(EngineBasicTest, TestSortedRestore) {
 TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
   size_t num_threads = 16;
   size_t num_collections = 16;
-  configs.max_access_threads = num_threads;
   configs.opt_large_sorted_collection_recovery = true;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
@@ -1521,7 +1484,6 @@ TEST_F(EngineBasicTest, TestMultiThreadSortedRestore) {
 TEST_F(EngineBasicTest, TestList) {
   size_t num_threads = 1;
   size_t count = 1000;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::vector<std::vector<std::string>> elems_vec(num_threads);
@@ -1792,7 +1754,6 @@ TEST_F(EngineBasicTest, TestList) {
 TEST_F(EngineBasicTest, TestHash) {
   size_t num_threads = 1;
   size_t count = 1000;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key{"Hash"};
@@ -1935,10 +1896,98 @@ TEST_F(EngineBasicTest, TestHash) {
   delete engine;
 }
 
+TEST_F(EngineBasicTest, TestVHash) {
+  size_t num_threads = 1;
+  size_t count = 1000;
+  configs.max_access_threads = num_threads + 1;
+  ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
+            Status::Ok);
+  std::string key{"VHash"};
+  ASSERT_EQ(engine->VHashCreate(key), Status::Ok);
+  ASSERT_EQ(engine->VHashDestroy(key), Status::Ok);
+  ASSERT_EQ(engine->VHashCreate(key), Status::Ok);
+  using umap = std::unordered_map<std::string, std::string>;
+  std::vector<umap> local_copies(num_threads);
+  std::mutex mu;
+
+  auto VPut = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    for (size_t j = 0; j < count; j++) {
+      std::string field{std::to_string(tid) + "_" + GetRandomString(10)};
+      std::string value{GetRandomString(120)};
+      ASSERT_EQ(engine->VHashPut(key, field, value), Status::Ok);
+      local_copy[field] = value;
+    }
+  };
+
+  auto VGet = [&](size_t tid) {
+    umap const& local_copy = local_copies[tid];
+    for (auto const& kv : local_copy) {
+      std::string resp;
+      ASSERT_EQ(engine->VHashGet(key, kv.first, &resp), Status::Ok);
+      ASSERT_EQ(resp, kv.second) << "Field:\t" << kv.first << "\n";
+    }
+  };
+
+  auto VDelete = [&](size_t tid) {
+    umap& local_copy = local_copies[tid];
+    std::string sink;
+    for (size_t i = 0; i < count / 2; i++) {
+      auto iter = local_copy.begin();
+      ASSERT_EQ(engine->VHashDelete(key, iter->first), Status::Ok);
+      ASSERT_EQ(engine->VHashGet(key, iter->first, &sink), Status::NotFound);
+      local_copy.erase(iter);
+    }
+  };
+
+  auto VSize = [&](size_t) {
+    size_t len = 0;
+    ASSERT_EQ(engine->VHashSize(key, &len), Status::Ok);
+    size_t cnt = 0;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      cnt += local_copies[tid].size();
+    }
+    ASSERT_EQ(len, cnt);
+  };
+
+  auto VIterate = [&](size_t) {
+    umap combined;
+    for (size_t tid = 0; tid < num_threads; tid++) {
+      umap const& local_copy = local_copies[tid];
+      for (auto const& kv : local_copy) {
+        combined[kv.first] = kv.second;
+      }
+    }
+
+    auto iter = engine->VHashIteratorCreate(key);
+
+    ASSERT_NE(iter, nullptr);
+    size_t cnt = 0;
+    for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+      ++cnt;
+      ASSERT_EQ(combined[iter->Key()], iter->Value());
+    }
+    ASSERT_EQ(cnt, combined.size());
+  };
+
+  for (size_t i = 0; i < 3; i++) {
+    LaunchNThreads(num_threads, VPut);
+    LaunchNThreads(num_threads, VGet);
+    LaunchNThreads(num_threads, VDelete);
+    LaunchNThreads(num_threads, VIterate);
+    LaunchNThreads(num_threads, VSize);
+    LaunchNThreads(num_threads, VPut);
+    LaunchNThreads(num_threads, VGet);
+    LaunchNThreads(num_threads, VDelete);
+    LaunchNThreads(num_threads, VIterate);
+    LaunchNThreads(num_threads, VSize);
+  }
+  delete engine;
+}
+
 TEST_F(EngineBasicTest, TestStringHotspot) {
   size_t n_thread_reading = 16;
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -1948,7 +1997,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
   std::string val2(1023, 'b');
 
   ASSERT_EQ(engine->Put(key, val1), Status::Ok);
-  engine->ReleaseAccessThread();
 
   auto EvenWriteOddRead = [&](uint32_t id) {
     for (size_t i = 0; i < count; i++) {
@@ -1990,7 +2038,6 @@ TEST_F(EngineBasicTest, TestStringHotspot) {
 TEST_F(EngineBasicTest, TestSortedHotspot) {
   size_t n_thread_reading = 16;
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2004,7 +2051,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 
   for (const std::string& key : keys) {
     ASSERT_EQ(engine->SortedPut(collection_name, key, val1), Status::Ok);
-    engine->ReleaseAccessThread();
 
     auto EvenWriteOddRead = [&](uint32_t id) {
       for (size_t i = 0; i < count; i++) {
@@ -2050,7 +2096,6 @@ TEST_F(EngineBasicTest, TestSortedHotspot) {
 TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
   using kvpair = std::pair<std::string, std::string>;
   size_t num_threads = 16;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2156,8 +2201,7 @@ TEST_F(EngineBasicTest, TestSortedCustomCompareFunction) {
 }
 
 TEST_F(EngineBasicTest, TestHashTableIterator) {
-  size_t threads = 32;
-  configs.max_access_threads = threads;
+  size_t num_threads = 32;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string collection_name = "sortedcollection";
@@ -2173,7 +2217,7 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
           Status::Ok);
     }
   };
-  LaunchNThreads(threads, MixedPut);
+  LaunchNThreads(num_threads, MixedPut);
 
   auto test_kvengine = static_cast<KVEngine*>(engine);
   auto hash_table = test_kvengine->GetHashTable();
@@ -2224,15 +2268,12 @@ TEST_F(EngineBasicTest, TestHashTableIterator) {
       }
       hashtable_iter.Next();
     }
-    ASSERT_EQ(total_entry_num, threads + 1);
+    ASSERT_EQ(total_entry_num, num_threads + 1);
   }
   delete engine;
 }
 
 TEST_F(EngineBasicTest, TestExpireAPI) {
-  size_t n_thread_reading = 1;
-  size_t n_thread_writing = 1;
-  configs.max_access_threads = n_thread_writing + n_thread_reading;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -2390,7 +2431,6 @@ TEST_F(EngineBasicTest, TestExpireAPI) {
 
 TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   size_t n_thread_writing = 16;
-  configs.max_access_threads = n_thread_writing;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   TTLType ttl = 1000;  // 1s
@@ -2458,13 +2498,404 @@ TEST_F(EngineBasicTest, TestbackgroundDestroyCollections) {
   delete engine;
 }
 
+TEST_F(TrasactionTest, TransactionBasic) {
+  size_t num_threads = 32;
+  configs.max_access_threads = num_threads;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  int amount = num_threads;
+  int transfer_amount = 1;
+  std::vector<std::string> accounts{"Jack", "Tom"};
+  int round = 10000;
+  std::string sorted_bank{"sorted_bank"};
+  std::string hash_bank{"hash_bank"};
+
+  ASSERT_EQ(engine->SortedCreate(sorted_bank), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_bank), Status::Ok);
+
+  auto string_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->StringGet(payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->StringGet(receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->StringGet(receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->StringPut(payer, payer_balance), Status::Ok);
+          ASSERT_EQ(txn->StringPut(receiver, receiver_balance), Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(txn->StringPut(payer, payer_balance_after_transfer),
+                Status::Ok);
+      ASSERT_EQ(txn->StringPut(receiver, receiver_balance_after_transfer),
+                Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->StringGet(payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->StringGet(receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->Get(payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->Get(receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->Get(payer, &value), Status::NotFound);
+        ASSERT_EQ(engine->Get(receiver, &value), Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto sorted_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->SortedGet(sorted_bank, payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->SortedGet(sorted_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->SortedGet(sorted_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->SortedPut(sorted_bank, payer, payer_balance),
+                    Status::Ok);
+          ASSERT_EQ(txn->SortedPut(sorted_bank, receiver, receiver_balance),
+                    Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(
+          txn->SortedPut(sorted_bank, payer, payer_balance_after_transfer),
+          Status::Ok);
+      ASSERT_EQ(txn->SortedPut(sorted_bank, receiver,
+                               receiver_balance_after_transfer),
+                Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->SortedGet(sorted_bank, payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->SortedGet(sorted_bank, receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->SortedGet(sorted_bank, payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->SortedGet(sorted_bank, receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->SortedGet(sorted_bank, payer, &value),
+                  Status::NotFound);
+        ASSERT_EQ(engine->SortedGet(sorted_bank, receiver, &value),
+                  Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto hash_transfer_txn = [&](size_t) {
+    int cnt = round;
+    while (cnt--) {
+      std::string payer;
+      std::string receiver;
+      if (fast_random_64() % 2 == 0) {
+        payer = accounts[0];
+        receiver = accounts[1];
+      } else {
+        payer = accounts[1];
+        receiver = accounts[0];
+      }
+
+      std::string payer_balance;
+      std::string receiver_balance;
+      bool exist = true;
+
+      auto txn = engine->TransactionCreate();
+      Status s = txn->HashGet(hash_bank, payer, &payer_balance);
+      if (s == Status::Ok) {
+        s = txn->HashGet(hash_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::Ok);
+        }
+      } else if (s == Status::NotFound) {
+        exist = false;
+        s = txn->HashGet(hash_bank, receiver, &receiver_balance);
+        if (s == Status::Timeout) {
+          txn->Rollback();
+          continue;
+        } else {
+          ASSERT_EQ(s, Status::NotFound);
+          payer_balance = std::to_string(amount);
+          receiver_balance = std::to_string(amount);
+          // Key is locked in previous get, so no conflict
+          ASSERT_EQ(txn->HashPut(hash_bank, payer, payer_balance), Status::Ok);
+          ASSERT_EQ(txn->HashPut(hash_bank, receiver, receiver_balance),
+                    Status::Ok);
+        }
+      } else {
+        ASSERT_EQ(s, Status::Timeout);
+        txn->Rollback();
+        continue;
+      }
+      ASSERT_EQ(std::stoi(payer_balance) + std::stoi(receiver_balance),
+                2 * amount);
+      if (std::stoi(payer_balance) == 0) {
+        txn->Rollback();
+        continue;
+      }
+
+      // Do transfer
+      std::string payer_balance_after_transfer =
+          std::to_string(std::stoi(payer_balance) - transfer_amount);
+      std::string receiver_balance_after_transfer =
+          std::to_string(std::stoi(receiver_balance) + transfer_amount);
+      ASSERT_EQ(txn->HashPut(hash_bank, payer, payer_balance_after_transfer),
+                Status::Ok);
+      ASSERT_EQ(
+          txn->HashPut(hash_bank, receiver, receiver_balance_after_transfer),
+          Status::Ok);
+      std::string value;
+      // Un-commited change should be visible by this transaction, but invisible
+      // outsider the transaction
+      ASSERT_EQ(txn->HashGet(hash_bank, payer, &value), Status::Ok);
+      ASSERT_EQ(value, payer_balance_after_transfer);
+      ASSERT_EQ(txn->HashGet(hash_bank, receiver, &value), Status::Ok);
+      ASSERT_EQ(value, receiver_balance_after_transfer);
+      ASSERT_EQ(std::stoi(payer_balance_after_transfer) +
+                    std::stoi(receiver_balance_after_transfer),
+                2 * amount);
+      if (exist) {
+        ASSERT_EQ(engine->HashGet(hash_bank, payer, &value), Status::Ok);
+        ASSERT_EQ(value, payer_balance);
+        ASSERT_EQ(engine->HashGet(hash_bank, receiver, &value), Status::Ok);
+        ASSERT_EQ(value, receiver_balance);
+      } else {
+        ASSERT_EQ(engine->HashGet(hash_bank, payer, &value), Status::NotFound);
+        ASSERT_EQ(engine->HashGet(hash_bank, receiver, &value),
+                  Status::NotFound);
+      }
+      ASSERT_EQ(txn->Commit(), Status::Ok);
+      break;
+    }
+  };
+
+  auto not_existed_collection_txn = [&]() {
+    std::string not_exist_collection("not_exist");
+    std::string key("key");
+    std::string val("val");
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->SortedPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->SortedDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->SortedGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+
+    ASSERT_EQ(txn->HashPut(not_exist_collection, key, val), Status::NotFound);
+    ASSERT_EQ(txn->HashDelete(not_exist_collection, key), Status::NotFound);
+    ASSERT_EQ(txn->HashGet(not_exist_collection, key, &got_val),
+              Status::NotFound);
+  };
+
+  LaunchNThreads(num_threads, string_transfer_txn);
+  LaunchNThreads(num_threads, sorted_transfer_txn);
+  LaunchNThreads(num_threads, hash_transfer_txn);
+  std::vector<std::string> balances{2};
+  ASSERT_EQ(engine->Get(accounts[0], &balances[0]), Status::Ok);
+  ASSERT_EQ(engine->Get(accounts[1], &balances[1]), Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+  ASSERT_EQ(engine->SortedGet(sorted_bank, accounts[0], &balances[0]),
+            Status::Ok);
+  ASSERT_EQ(engine->SortedGet(sorted_bank, accounts[1], &balances[1]),
+            Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+  ASSERT_EQ(engine->HashGet(hash_bank, accounts[0], &balances[0]), Status::Ok);
+  ASSERT_EQ(engine->HashGet(hash_bank, accounts[1], &balances[1]), Status::Ok);
+  ASSERT_EQ(std::stoi(balances[0]) + std::stoi(balances[1]), 2 * amount);
+
+  not_existed_collection_txn();
+
+  delete engine;
+}
+
+TEST_F(TrasactionTest, Conflict) {
+  configs.max_access_threads = 3;
+  ASSERT_EQ(Engine::Open(db_path, &engine, configs, stdout), Status::Ok);
+  std::string sorted_collection{"sorted_collection"};
+  std::string hash_collection{"hash_collection"};
+  std::string key{"key"};
+  std::string val("val");
+  ASSERT_EQ(engine->SortedCreate(sorted_collection), Status::Ok);
+  ASSERT_EQ(engine->HashCreate(hash_collection), Status::Ok);
+
+  Status expected_return = Status::Timeout;
+
+  auto operation_thread = [&](size_t) {
+    std::string got_val;
+    auto txn = engine->TransactionCreate();
+    ASSERT_TRUE(txn != nullptr);
+    ASSERT_EQ(txn->StringPut(key, val), expected_return);
+    ASSERT_EQ(txn->StringGet(key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->StringDelete(key), expected_return);
+    txn->Rollback();
+
+    ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), expected_return);
+    ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val),
+              expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->SortedDelete(sorted_collection, key), expected_return);
+    txn->Rollback();
+
+    ASSERT_EQ(txn->HashPut(hash_collection, key, val), expected_return);
+    ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), expected_return);
+    if (expected_return == Status::Ok) {
+      ASSERT_EQ(got_val, val);
+    }
+    ASSERT_EQ(txn->HashDelete(hash_collection, key), expected_return);
+    txn->Rollback();
+  };
+
+  auto txn = engine->TransactionCreate();
+  ASSERT_EQ(txn->StringPut(key, val), Status::Ok);
+  ASSERT_EQ(txn->SortedPut(sorted_collection, key, val), Status::Ok);
+  ASSERT_EQ(txn->HashPut(hash_collection, key, val), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  std::string got_val;
+  ASSERT_EQ(txn->StringGet(key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->SortedGet(sorted_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  ASSERT_EQ(txn->HashGet(hash_collection, key, &got_val), Status::Ok);
+  ASSERT_EQ(got_val, val);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  expected_return = Status::Ok;
+  LaunchNThreads(1, operation_thread);
+
+  expected_return = Status::Timeout;
+  ASSERT_EQ(txn->StringDelete(key), Status::Ok);
+  ASSERT_EQ(txn->SortedDelete(sorted_collection, key), Status::Ok);
+  ASSERT_EQ(txn->HashDelete(hash_collection, key), Status::Ok);
+  LaunchNThreads(1, operation_thread);
+  ASSERT_EQ(txn->Commit(), Status::Ok);
+
+  delete engine;
+}
+
 // ========================= Sync Point ======================================
 
 #if KVDK_DEBUG_LEVEL > 0
 
 TEST_F(BatchWriteTest, SortedRollback) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   for (int index_with_hashtable : {0, 1}) {
     // Test crash before commit
     SyncPoint::GetInstance()->EnableCrashPoint(
@@ -2587,7 +3018,6 @@ TEST_F(BatchWriteTest, StringRollBack) {
   // another thread may reuse this id and the old batch log file
   // is overwritten.
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -2662,7 +3092,6 @@ TEST_F(BatchWriteTest, StringRollBack) {
 
 TEST_F(BatchWriteTest, HashRollback) {
   size_t num_threads = 1;
-  configs.max_access_threads = num_threads + 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t batch_size = 100;
@@ -2751,7 +3180,6 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
         *((std::atomic_bool*)close_reclaimer) = true;
         return;
       });
-  configs.max_access_threads = 1;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   size_t count = 100;
@@ -2864,7 +3292,6 @@ TEST_F(BatchWriteTest, ListBatchOperationRollback) {
 // Then Repair
 TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseOne) {
   Configs test_config = configs;
-  test_config.max_access_threads = 16;
 
   std::atomic<int> update_num(1);
   int cnt = 20;
@@ -2955,7 +3382,6 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
 
@@ -3017,7 +3443,6 @@ TEST_F(EngineBasicTest, TestSortedRecoverySyncPointCaseTwo) {
 //   thread2: iter
 TEST_F(EngineBasicTest, TestSortedSyncPoint) {
   Configs test_config = configs;
-  test_config.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, test_config, stdout),
             Status::Ok);
   std::vector<std::thread> ths;
@@ -3072,8 +3497,6 @@ TEST_F(EngineBasicTest, TestSortedSyncPoint) {
 }
 
 TEST_F(EngineBasicTest, TestHashTableRangeIter) {
-  uint64_t threads = 16;
-  configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string key = "stringkey";
@@ -3130,7 +3553,6 @@ TEST_F(EngineBasicTest, TestBackGroundCleaner) {
       });
   SyncPoint::GetInstance()->EnableProcessing();
 
-  configs.max_access_threads = 16;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
 
@@ -3342,8 +3764,6 @@ TEST_F(EngineBasicTest, TestBackGroundIterNoHashIndexSkiplist) {
       {{"KVEngine::BackgroundCleaner::IterSkiplist::UnlinkDeleteRecord",
         "KVEngine::SkiplistNoHashIndex::Put"}});
   SyncPoint::GetInstance()->EnableProcessing();
-  uint64_t threads = 16;
-  configs.max_access_threads = threads;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),
             Status::Ok);
   std::string collection_name = "Skiplist_with_hash_index";
@@ -3432,7 +3852,6 @@ TEST_F(EngineBasicTest, TestDynamicCleaner) {
                                           return;
                                         });
   SyncPoint::GetInstance()->EnableProcessing();
-  configs.max_access_threads = 32;
   configs.hash_bucket_num = 256;
   configs.clean_threads = 8;
   ASSERT_EQ(Engine::Open(db_path.c_str(), &engine, configs, stdout),

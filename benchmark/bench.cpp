@@ -78,7 +78,7 @@ DEFINE_bool(
     "Populate pmem space while creating a new instance. This can improve write "
     "performance in runtime, but will take long time to init the instance");
 
-DEFINE_int32(max_access_threads, 32, "Max access threads of the instance");
+DEFINE_uint64(max_access_threads, 64, "Max access threads of the instance");
 
 DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
 
@@ -122,11 +122,27 @@ std::vector<std::vector<std::uint64_t>> latencies;
 std::vector<PaddedEngine> random_engines;
 std::vector<PaddedRangeIterators> ranges;
 
-enum class DataType { String, Sorted, Hashes, List, Blackhole } bench_data_type;
+enum class DataType {
+  String,
+  Sorted,
+  Hashes,
+  List,
+  VHash,
+  Blackhole
+} bench_data_type;
 
 enum class KeyDistribution { Range, Uniform, Zipf } key_dist;
 
 enum class ValueSizeDistribution { Constant, Uniform } vsz_dist;
+
+void LaunchNThreads(int n_thread, std::function<void(int tid)> func,
+                    int id_start = 0) {
+  std::vector<std::thread> ts;
+  for (int i = id_start; i < id_start + n_thread; i++) {
+    ts.emplace_back(std::thread(func, i));
+  }
+  for (auto& t : ts) t.join();
+}
 
 std::uint64_t generate_key(size_t tid) {
   static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
@@ -163,6 +179,24 @@ size_t generate_value_size(size_t tid) {
     }
   }
 }
+
+#ifdef KVDK_ENABLE_VHASH
+void FillVHash(size_t tid) {
+  std::string key(8, ' ');
+  for (size_t i = 0; i < FLAGS_num_kv / FLAGS_num_collection; ++i) {
+    std::uint64_t num = ranges[tid].gen();
+    std::uint64_t cid = num % FLAGS_num_collection;
+    memcpy(&key[0], &num, 8);
+    StringView value = StringView(value_pool.data(), generate_value_size(tid));
+
+    Status s = engine->VHashPut(collections[cid], key, value);
+
+    if (s != Status::Ok) {
+      throw std::runtime_error{"VHashPut error"};
+    }
+  }
+}
+#endif
 
 void DBWrite(int tid) {
   std::string key(8, ' ');
@@ -228,6 +262,14 @@ void DBWrite(int tid) {
       }
       case DataType::List: {
         s = engine->ListPushFront(collections[cid], value);
+        break;
+      }
+      case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
+        s = engine->VHashPut(collections[cid], key, value);
+#else
+        s = Status::NotSupported;
+#endif
         break;
       }
       case DataType::Blackhole: {
@@ -313,6 +355,20 @@ void DBScan(int tid) {
         engine->HashIteratorRelease(iter);
         break;
       }
+      case DataType::VHash: {
+        auto iter = engine->VHashIteratorCreate(collections[cid]);
+        if (!iter) throw std::runtime_error{"Fail creating VHashIterator"};
+        for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+          key = iter->Key();
+          value_sink = iter->Value();
+          ++operations;
+          if (operations > operations_counted + 1000) {
+            read_ops += (operations - operations_counted);
+            operations_counted = operations;
+          }
+        }
+        break;
+      }
       case DataType::Blackhole: {
         operations += 1024;
         read_ops.fetch_add(1024);
@@ -366,6 +422,14 @@ void DBRead(int tid) {
         s = engine->ListPopBack(collections[cid], &value_sink);
         break;
       }
+      case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
+        s = engine->VHashGet(collections[cid], key, &value_sink);
+#else
+        s = Status::NotSupported;
+#endif
+        break;
+      }
       case DataType::Blackhole: {
         s = Status::Ok;
         break;
@@ -412,6 +476,8 @@ void ProcessBenchmarkConfigs() {
     bench_data_type = DataType::Hashes;
   } else if (FLAGS_type == "list") {
     bench_data_type = DataType::List;
+  } else if (FLAGS_type == "vhash") {
+    bench_data_type = DataType::VHash;
   } else if (FLAGS_type == "blackhole") {
     bench_data_type = DataType::Blackhole;
   } else {
@@ -425,6 +491,7 @@ void ProcessBenchmarkConfigs() {
     }
     case DataType::Hashes:
     case DataType::List:
+    case DataType::VHash:
     case DataType::Sorted: {
       collections.resize(FLAGS_num_collection);
       for (size_t i = 0; i < FLAGS_num_collection; i++) {
@@ -436,6 +503,9 @@ void ProcessBenchmarkConfigs() {
 
   if (FLAGS_batch_size > 0 && (bench_data_type == DataType::List)) {
     throw std::invalid_argument{R"(List does not support batch write.)"};
+  }
+  if (FLAGS_batch_size > 0 && (bench_data_type == DataType::VHash)) {
+    throw std::invalid_argument{R"(VHash does not support batch write.)"};
   }
 
   // Check for scan flag
@@ -458,10 +528,11 @@ void ProcessBenchmarkConfigs() {
 
   random_engines.resize(FLAGS_threads);
   if (FLAGS_fill) {
+    assert(bench_data_type != DataType::VHash && "VHash don't need fill");
     assert(FLAGS_read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
-    for (int i = 0; i < FLAGS_max_access_threads; i++) {
+    operations_per_thread = FLAGS_num_kv / FLAGS_threads + 1;
+    for (size_t i = 0; i < FLAGS_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
@@ -473,6 +544,14 @@ void ProcessBenchmarkConfigs() {
       key_dist = KeyDistribution::Zipf;
     } else {
       throw std::invalid_argument{"Invalid key distribution"};
+    }
+  }
+  if (bench_data_type == DataType::VHash) {
+    // Vhash needs fill for read and update benchmarks
+    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
+    for (size_t i = 0; i < FLAGS_max_access_threads; i++) {
+      ranges.emplace_back(i * operations_per_thread,
+                          (i + 1) * operations_per_thread);
     }
   }
 
@@ -535,7 +614,6 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create Sorted collection"};
         }
       }
-      engine->ReleaseAccessThread();
       break;
     }
     case DataType::Hashes: {
@@ -545,7 +623,6 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create Hashset"};
         }
       }
-      engine->ReleaseAccessThread();
       break;
     }
     case DataType::List: {
@@ -555,7 +632,24 @@ int main(int argc, char** argv) {
           throw std::runtime_error{"Fail to create List"};
         }
       }
-      engine->ReleaseAccessThread();
+      break;
+    }
+    case DataType::VHash: {
+#ifdef KVDK_ENABLE_VHASH
+      for (auto col : collections) {
+        Status s =
+            engine->VHashCreate(col, FLAGS_num_kv / FLAGS_num_collection);
+        if (s != Status::Ok) {
+          throw std::runtime_error{"Fail to create VHash"};
+        }
+      }
+      if (!FLAGS_fill) {
+        LaunchNThreads(FLAGS_threads, FillVHash);
+      }
+#else
+      throw std::runtime_error{"VHash not supported!"};
+#endif
+
       break;
     }
     default: {

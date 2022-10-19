@@ -82,6 +82,17 @@ class HashList : public Collection {
   // Notice: the deleting key should already been locked by engine
   WriteResult Delete(const StringView& key, TimestampType timestamp);
 
+  // Modify value of "key" in the hash list
+  //
+  // Args:
+  // * modify_func: customized function to modify existing value of key. See
+  // definition of ModifyFunc (types.hpp) for more details.
+  // * modify_args: customized arguments of modify_func.
+  //
+  // Return:
+  // Status::Ok if modify success.
+  // Status::Abort if modify function abort modifying.
+  // Return other non-Ok status on any error.
   WriteResult Modify(const StringView key, ModifyFunc modify_func,
                      void* modify_args, TimestampType timestamp);
 
@@ -162,7 +173,7 @@ class HashList : public Collection {
 
   static bool MatchType(const DLRecord* record) {
     RecordType type = record->GetRecordType();
-    return type == RecordType::HashElem || type == RecordType::HashHeader;
+    return type == RecordType::HashElem || type == RecordType::HashRecord;
   }
 
  private:

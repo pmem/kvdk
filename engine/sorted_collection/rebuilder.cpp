@@ -40,7 +40,7 @@ SortedCollectionRebuilder::RebuildResult SortedCollectionRebuilder::Rebuild() {
 }
 
 Status SortedCollectionRebuilder::AddHeader(DLRecord* header_record) {
-  assert(header_record->GetRecordType() == RecordType::SortedHeader);
+  assert(header_record->GetRecordType() == RecordType::SortedRecord);
 
   bool linked_record = recovery_utils_.CheckAndRepairLinkage(header_record);
   if (!linked_record) {
@@ -74,7 +74,8 @@ Status SortedCollectionRebuilder::AddElement(DLRecord* record) {
     }
   } else {
     if (segment_based_rebuild_ &&
-        ++rebuilder_thread_cache_[access_thread.id]
+        ++rebuilder_thread_cache_[ThreadManager::ThreadID() %
+                                  rebuilder_thread_cache_.size()]
                     .visited_skiplists[Skiplist::FetchID(record)] %
                 kRestoreSkiplistStride ==
             0 &&
@@ -117,10 +118,6 @@ Status SortedCollectionRebuilder::Rollback(
 
 Status SortedCollectionRebuilder::initRebuildLists() {
   PMEMAllocator* pmem_allocator = kv_engine_->pmem_allocator_.get();
-  Status s = kv_engine_->maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
 
   // Keep headers with same id together for recognize outdated ones
   auto cmp = [](const DLRecord* header1, const DLRecord* header2) {
@@ -245,7 +242,7 @@ Status SortedCollectionRebuilder::initRebuildLists() {
     }
   }
   linked_headers_.clear();
-  return s;
+  return Status::Ok;
 }
 
 Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
@@ -253,11 +250,7 @@ Status SortedCollectionRebuilder::segmentBasedIndexRebuild() {
   std::vector<std::future<Status>> fs;
 
   auto rebuild_segments_index = [&]() -> Status {
-    Status s = this->kv_engine_->maybeInitAccessThread();
-    if (s != Status::Ok) {
-      return s;
-    }
-    defer(this->kv_engine_->ReleaseAccessThread());
+    this_thread.id = next_tid_.fetch_add(1);
     for (auto iter = this->recovery_segments_.begin();
          iter != this->recovery_segments_.end(); iter++) {
       if (!iter->second.visited) {
@@ -467,6 +460,8 @@ void SortedCollectionRebuilder::linkSegmentDramNodes(SkiplistNode* start_node,
 }
 
 Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
+  this_thread.id = next_tid_.fetch_add(1);
+
   Splice splice(skiplist);
   for (uint8_t i = 1; i <= kMaxHeight; i++) {
     splice.prevs[i] = skiplist->HeaderNode();
@@ -492,12 +487,7 @@ Status SortedCollectionRebuilder::linkHighDramNodes(Skiplist* skiplist) {
 }
 
 Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
-  Status s = kv_engine_->maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
-  defer(kv_engine_->ReleaseAccessThread());
-
+  this_thread.id = next_tid_.fetch_add(1);
   size_t num_elems = 0;
 
   Splice splice(skiplist);
@@ -649,12 +639,12 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
             RecordType::SortedElem,
         "");
   } else if (index_type == PointerType::Skiplist) {
-    record_type = RecordType::SortedHeader;
+    record_type = RecordType::SortedRecord;
     record_status =
         static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordStatus();
     kvdk_assert(
         static_cast<Skiplist*>(index_ptr)->HeaderRecord()->GetRecordType() ==
-            RecordType::SortedHeader,
+            RecordType::SortedRecord,
         "");
   } else {
     kvdk_assert(false, "Wrong type in sorted collection rebuilder");

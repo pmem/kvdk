@@ -96,10 +96,6 @@ KVDKStatus KVDKRestore(const char* name, const char* backup_log,
   return s;
 }
 
-void KVDKReleaseAccessThread(KVDKEngine* engine) {
-  engine->rep->ReleaseAccessThread();
-}
-
 KVDKSnapshot* KVDKGetSnapshot(KVDKEngine* engine, int make_checkpoint) {
   KVDKSnapshot* snapshot = new KVDKSnapshot;
   snapshot->rep = engine->rep->GetSnapshot(make_checkpoint);
