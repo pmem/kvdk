@@ -116,9 +116,9 @@ std::unique_ptr<VHashIterator> KVEngine::VHashIteratorCreate(StringView key,
 
   if (!checkKeySize(key)) return nullptr;
 
+  auto thread_access = AcquireAccessThread();
   /// TODO: iterator should hold an access token to keep VHash valid.
   auto token = version_controller_.GetLocalSnapshotHolder();
-  auto thread_access = AcquireAccessThread();
 
   VHash* vhash = vhashes_.Get(key);
   if (vhash == nullptr) return nullptr;
