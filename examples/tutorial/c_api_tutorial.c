@@ -26,7 +26,7 @@ static int StrCmp(const char* a, size_t alen, const char* b, size_t blen) {
   return r;
 }
 
-void AnonymousCollectionExample(KVDKEngine* kvdk_engine) {
+void StringExample(KVDKEngine* kvdk_engine) {
   const char* key1 = "key1";
   const char* key2 = "key2";
   const char* value1 = "value1";
@@ -301,7 +301,7 @@ void CompFuncForSortedCollectionExample(KVDKEngine* kvdk_engine) {
   KVDKDestroySortedCollectionConfigs(s_configs);
 }
 
-void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
+void BatchWriteStringExample(KVDKEngine* kvdk_engine) {
   const char* key1 = "key1";
   const char* key2 = "key2";
   const char* value1 = "value1";
@@ -324,10 +324,50 @@ void BatchWriteAnonCollectionExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   cmp = StrCmp(read_v2, read_v2_len, value2, strlen(value2));
   assert(cmp == 0);
-  printf("Successfully performed BatchWrite on anonymous global collection.\n");
+  printf("Successfully performed BatchWrite on String.\n");
   KVDKWriteBatchDestory(kvdk_wb);
   free(read_v1);
   free(read_v2);
+}
+
+void TransactionStringExample(KVDKEngine* kvdk_engine) {
+  const char* receiver = "Jack";
+  const char* payer = "Tom";
+  const char* payer_balance = "10";
+  const char* receiver_balance = "0";
+  KVDKWriteOptions* write_option = KVDKCreateWriteOptions();
+
+  KVDKPut(kvdk_engine, payer, strlen(payer), payer_balance,
+          strlen(payer_balance), write_option);
+  KVDKPut(kvdk_engine, receiver, strlen(receiver), receiver_balance,
+          strlen(receiver_balance), write_option);
+
+  KVDKTransaction* txn = KVDKTransactionCreate(kvdk_engine);
+  assert(txn != NULL);
+  KVDKStatus s =
+      KVDKTransactionStringPut(txn, payer, strlen(payer), "0", strlen("0"));
+  assert(s == Ok);
+  s = KVDKTransactionStringPut(txn, receiver, strlen(receiver), "10",
+                               strlen("10"));
+  assert(s == Ok);
+  s = KVDKTransactionCommit(txn);
+  assert(s == Ok);
+
+  char* val;
+  size_t val_len;
+  s = KVDKGet(kvdk_engine, payer, strlen(payer), &val_len, &val);
+  assert(s == Ok);
+  assert(val_len == strlen("0"));
+  assert(memcmp(val, "0", val_len) == 0);
+  free(val);
+  s = KVDKGet(kvdk_engine, receiver, strlen(receiver), &val_len, &val);
+  assert(s == Ok);
+  assert(val_len == strlen("10"));
+  assert(memcmp(val, "10", val_len) == 0);
+  free(val);
+
+  KVDKTransactionDestory(txn);
+  printf("Successfully performed Transaction on String.\n");
 }
 
 void HashesCollectionExample(KVDKEngine* kvdk_engine) {
@@ -739,7 +779,7 @@ int main() {
   ModifyExample(kvdk_engine);
 
   // Anonymous Global Collection Example
-  AnonymousCollectionExample(kvdk_engine);
+  StringExample(kvdk_engine);
 
   // Named Sorted Collection Example
   SortedCollectionExample(kvdk_engine);
@@ -749,8 +789,11 @@ int main() {
 
   CompFuncForSortedCollectionExample(kvdk_engine);
 
-  // BatchWrite on Anonymous Global Collection Example
-  BatchWriteAnonCollectionExample(kvdk_engine);
+  // BatchWrite on String Example
+  BatchWriteStringExample(kvdk_engine);
+
+  // Transaction on String Example
+  TransactionStringExample(kvdk_engine);
 
   // Hashes Collection Example
   HashesCollectionExample(kvdk_engine);

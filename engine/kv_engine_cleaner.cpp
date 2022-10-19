@@ -44,8 +44,9 @@ template <typename T>
 void KVEngine::removeAndCacheOutdatedVersion(T* record) {
   static_assert(std::is_same<T, StringRecord>::value ||
                 std::is_same<T, DLRecord>::value);
-  kvdk_assert(access_thread.id >= 0, "");
-  auto& tc = cleaner_thread_cache_[access_thread.id];
+  kvdk_assert(ThreadManager::ThreadID() >= 0, "");
+  auto& tc = cleaner_thread_cache_[ThreadManager::ThreadID() %
+                                   configs_.max_access_threads];
   if (std::is_same<T, StringRecord>::value) {
     StringRecord* old_record = removeOutDatedVersion<StringRecord>(
         (StringRecord*)record, version_controller_.GlobalOldestSnapshotTs());
@@ -87,8 +88,9 @@ void KVEngine::cleanOutdatedRecordImpl(T* old_record) {
 }
 
 void KVEngine::tryCleanCachedOutdatedRecord() {
-  kvdk_assert(access_thread.id >= 0, "");
-  auto& tc = cleaner_thread_cache_[access_thread.id];
+  kvdk_assert(ThreadManager::ThreadID() >= 0, "");
+  auto& tc = cleaner_thread_cache_[ThreadManager::ThreadID() %
+                                   configs_.max_access_threads];
   // Regularly update local oldest snapshot
   thread_local uint64_t round = 0;
   if (++round % kForegroundUpdateSnapshotInterval == 0) {
@@ -158,7 +160,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::SortedHeader: {
+        case RecordType::SortedRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -181,7 +183,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::HashHeader: {
+        case RecordType::HashRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -204,7 +206,7 @@ void KVEngine::purgeAndFreeDLRecords(
           }
           break;
         }
-        case RecordType::ListHeader: {
+        case RecordType::ListRecord: {
           if (record_status != RecordStatus::Outdated &&
               !pmem_record->HasExpired()) {
             entries.emplace_back(
@@ -758,7 +760,7 @@ void Cleaner::FetchOutdatedCollections(
       auto skiplist_iter = outdated_collections_.skiplists.begin();
       if (skiplist_iter->second < min_snapshot_ts) {
         outdated_collection = skiplist_iter->first;
-        record_type = RecordType::SortedHeader;
+        record_type = RecordType::SortedRecord;
         outdated_collections_.skiplists.erase(skiplist_iter);
       }
     }
@@ -767,7 +769,7 @@ void Cleaner::FetchOutdatedCollections(
       auto list_iter = outdated_collections_.lists.begin();
       if (list_iter->second < min_snapshot_ts) {
         outdated_collection = list_iter->first;
-        record_type = RecordType::ListHeader;
+        record_type = RecordType::ListRecord;
         outdated_collections_.lists.erase(list_iter);
       }
     }
@@ -776,7 +778,7 @@ void Cleaner::FetchOutdatedCollections(
       auto hash_list_iter = outdated_collections_.hashlists.begin();
       if (hash_list_iter->second < min_snapshot_ts) {
         outdated_collection = hash_list_iter->first;
-        record_type = RecordType::HashHeader;
+        record_type = RecordType::HashRecord;
         outdated_collections_.hashlists.erase(hash_list_iter);
       }
     }

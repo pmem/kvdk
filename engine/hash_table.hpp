@@ -184,6 +184,8 @@ class HashTable {
     return std::unique_lock<SpinMutex>{*getHint(key).spin};
   }
 
+  SpinMutex* GetLock(StringView const& key) { return getHint(key).spin; }
+
   HashTableIterator GetIterator(uint64_t start_slot_idx, uint64_t end_slot_idx);
 
   size_t GetSlotsNum() { return slots_.size(); }

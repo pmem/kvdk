@@ -65,7 +65,7 @@ Skiplist::WriteResult Skiplist::SetExpireTime(ExpireTimeType expired_time,
   }
   DLRecord* pmem_record = DLRecord::PersistDLRecord(
       pmem_allocator_->offset2addr_checked(space_entry.offset),
-      space_entry.size, timestamp, RecordType::SortedHeader,
+      space_entry.size, timestamp, RecordType::SortedRecord,
       RecordStatus::Normal, pmem_allocator_->addr2offset_checked(header),
       header->prev, header->next, header->Key(), header->Value(), expired_time);
   bool success = Skiplist::Replace(header, pmem_record, HeaderNode(),
@@ -310,10 +310,10 @@ bool Skiplist::lockInsertPosition(const StringView& inserting_key,
   auto check_order = [&]() {
     bool res =
         /*check next*/ (next_record->GetRecordType() ==
-                            RecordType::SortedHeader ||
+                            RecordType::SortedRecord ||
                         Compare(inserting_key, UserKey(next_record)) <= 0) &&
         /*check prev*/ (prev_record->GetRecordType() ==
-                            RecordType::SortedHeader ||
+                            RecordType::SortedRecord ||
                         Compare(inserting_key, UserKey(prev_record)) > 0);
     return res;
   };

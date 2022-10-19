@@ -8,11 +8,7 @@
 namespace KVDK_NAMESPACE {
 Status KVEngine::SortedCreate(const StringView collection_name,
                               const SortedCollectionConfigs& s_configs) {
-  Status s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection_name)) {
     return Status::InvalidDataSize;
@@ -30,8 +26,9 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimestampType new_ts = holder.Timestamp();
   auto lookup_result =
-      lookupKey<true>(collection_name, RecordType::SortedHeader);
+      lookupKey<true>(collection_name, RecordType::SortedRecord);
   if (lookup_result.s == NotFound || lookup_result.s == Outdated) {
+    auto create_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* existing_header =
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().skiplist->HeaderRecord()
@@ -56,7 +53,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr(space_entry.offset), space_entry.size,
-        new_ts, RecordType::SortedHeader, RecordStatus::Normal,
+        new_ts, RecordType::SortedRecord, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space_entry.offset,
         space_entry.offset, collection_name, value_str);
 
@@ -65,7 +62,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
         pmem_allocator_.get(), hash_table_.get(), dllist_locks_.get(),
         s_configs.index_with_hashtable);
     addSkiplistToMap(skiplist);
-    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+    insertKeyOrElem(lookup_result, RecordType::SortedRecord,
                     RecordStatus::Normal, skiplist.get());
   } else {
     return lookup_result.s == Status::Ok ? Status::Existed : lookup_result.s;
@@ -74,20 +71,18 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 }
 
 Status KVEngine::SortedDestroy(const StringView collection_name) {
-  auto s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
+
   auto ul = hash_table_->AcquireLock(collection_name);
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
   auto lookup_result =
-      lookupKey<false>(collection_name, RecordType::SortedHeader);
+      lookupKey<false>(collection_name, RecordType::SortedRecord);
   if (lookup_result.s == Status::Ok) {
+    auto destroy_token = acquireCollectionCreateOrDestroyLock();
     Skiplist* skiplist = lookup_result.entry.GetIndex().skiplist;
     DLRecord* header = skiplist->HeaderRecord();
-    assert(header->GetRecordType() == RecordType::SortedHeader);
+    assert(header->GetRecordType() == RecordType::SortedRecord);
     StringView value = header->Value();
     auto request_size =
         sizeof(DLRecord) + collection_name.size() + value.size();
@@ -97,14 +92,14 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space_entry.offset),
-        space_entry.size, new_ts, RecordType::SortedHeader,
+        space_entry.size, new_ts, RecordType::SortedRecord,
         RecordStatus::Outdated, pmem_allocator_->addr2offset_checked(header),
         header->prev, header->next, collection_name, value, 0);
     bool success =
         Skiplist::Replace(header, pmem_record, skiplist->HeaderNode(),
                           pmem_allocator_.get(), dllist_locks_.get());
     kvdk_assert(success, "existing header should be linked on its skiplist");
-    insertKeyOrElem(lookup_result, RecordType::SortedHeader,
+    insertKeyOrElem(lookup_result, RecordType::SortedRecord,
                     RecordStatus::Outdated, skiplist);
     {
       std::unique_lock<std::mutex> skiplist_lock(skiplists_mu_);
@@ -118,16 +113,12 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
 }
 
 Status KVEngine::SortedSize(const StringView collection, size_t* size) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedRecord);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -141,17 +132,13 @@ Status KVEngine::SortedSize(const StringView collection, size_t* size) {
 
 Status KVEngine::SortedGet(const StringView collection,
                            const StringView user_key, std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedRecord);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -166,16 +153,13 @@ Status KVEngine::SortedGet(const StringView collection,
 
 Status KVEngine::SortedPut(const StringView collection,
                            const StringView user_key, const StringView value) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
 
-  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedRecord);
   if (ret.s != Status::Ok) {
     return ret.s == Status::Outdated ? Status::NotFound : ret.s;
   }
@@ -188,18 +172,17 @@ Status KVEngine::SortedPut(const StringView collection,
 
 Status KVEngine::SortedDelete(const StringView collection,
                               const StringView user_key) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
+
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   Skiplist* skiplist = nullptr;
-  auto ret = lookupKey<false>(collection, RecordType::SortedHeader);
+  auto ret = lookupKey<false>(collection, RecordType::SortedRecord);
   if (ret.s != Status::Ok) {
-    return (ret.s == Status::Outdated || ret.s == Status::NotFound) ? Status::Ok
-                                                                    : ret.s;
+    return (ret.s == Status::Outdated || ret.s == Status::NotFound)
+               ? Status::NotFound
+               : ret.s;
   }
 
   kvdk_assert(ret.entry.GetIndexType() == PointerType::Skiplist,
@@ -217,7 +200,7 @@ SortedIterator* KVEngine::SortedIteratorCreate(const StringView collection,
     snapshot = GetSnapshot(false);
   }
   // find collection
-  auto res = lookupKey<false>(collection, RecordType::SortedHeader);
+  auto res = lookupKey<false>(collection, RecordType::SortedRecord);
   if (s != nullptr) {
     *s = (res.s == Status::Outdated) ? Status::NotFound : res.s;
   }

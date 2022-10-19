@@ -98,7 +98,6 @@ class AllocatorBench {
     std::vector<std::vector<op_alloc_info>> records(num_thread);
     double elapesd_time = 0;
     auto RandomBench = [&](uint64_t id) {
-      allocator->InitThread();
       std::vector<op_alloc_info> work_sets(iter_num);
       std::chrono::system_clock::time_point to_begin =
           std::chrono::high_resolution_clock::now();
@@ -125,8 +124,6 @@ class AllocatorBench {
     std::cout << "Total execute time: " << std::fixed << std::setprecision(5)
               << elapesd_time << " seconds\n";
 
-    // Clear all memory to avoid memory leak
-    allocator->InitThread();
     for (auto record : records) {
       for (auto r : record) {
         allocator->wrapped_free(&r);

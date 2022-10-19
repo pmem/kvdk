@@ -5,19 +5,18 @@
 `KVDK` (Key-Value Development Kit) is a key-value store library implemented in C++ language. It is designed for supporting DRAM, Optane persistent memory and CXL memory pool. It also demonstrates several optimization methods for high performance with tiered memory. Besides providing the basic APIs of key-value store, it offers several advanced features, like read-modify-write, checkpoint, etc.
 
 ## Features
+* Rich data types
+  * string, sorted, hash, list, hash
 * Basic KV operations
-  * string get/set/update/delete
-* Sorted KV operations
-  * sorted string get/set/update/scan/delete
-* Rich value types
-  * list, hash
+  * get/put/update/delete/scan
 * Read-Modify-Write
 * Support TTL
 * Atomic Batch Write
 * Snapshot based Scan
 * Consistent Dump & Restore to/from storage
+* Consistent Checkpoint
+* Transaction
 * C/C++/Java APIs
-* Support Transaction (coming soon)
 
 # Limitations
 *  The maximum supported key-value size is 64KB-4GB.

@@ -278,10 +278,6 @@ public class Engine extends KVDKObject {
         batchWrite(nativeHandle_, batch.getNativeHandle());
     }
 
-    public void releaseAccessThread() {
-        releaseAccessThread(nativeHandle_);
-    }
-
     // Native methods
     @Override
     protected final native void closeInternal(long handle);
@@ -346,8 +342,6 @@ public class Engine extends KVDKObject {
     private native long writeBatchCreate(long handle);
 
     private native void batchWrite(long engineHandle, long batchHandle);
-
-    private native void releaseAccessThread(long engineHandle);
 
     private enum LibraryState {
         NOT_LOADED,

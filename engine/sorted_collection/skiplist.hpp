@@ -305,7 +305,7 @@ class Skiplist : public Collection {
 
   static bool MatchType(DLRecord* record) {
     RecordType type = record->GetRecordType();
-    return type == RecordType::SortedElem || type == RecordType::SortedHeader;
+    return type == RecordType::SortedElem || type == RecordType::SortedRecord;
   }
 
   // Remove a dl record from its skiplist by unlinking
@@ -377,7 +377,7 @@ class Skiplist : public Collection {
       case RecordType::SortedElem:
         return ExtractID(record->Key());
         break;
-      case RecordType::SortedHeader:
+      case RecordType::SortedRecord:
         return DecodeID(record->Value());
       default:
         GlobalLogger.Error("Wrong record type %u in SkiplistID",

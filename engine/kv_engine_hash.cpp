@@ -7,10 +7,7 @@
 
 namespace KVDK_NAMESPACE {
 Status KVEngine::HashCreate(StringView collection) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
@@ -25,9 +22,10 @@ Status KVEngine::buildHashlist(const StringView& collection,
   auto ul = hash_table_->AcquireLock(collection);
   auto holder = version_controller_.GetLocalSnapshotHolder();
   TimestampType new_ts = holder.Timestamp();
-  auto lookup_result = lookupKey<true>(collection, RecordType::HashHeader);
+  auto lookup_result = lookupKey<true>(collection, RecordType::HashRecord);
   if (lookup_result.s == Status::NotFound ||
       lookup_result.s == Status::Outdated) {
+    auto create_token = acquireCollectionCreateOrDestroyLock();
     DLRecord* existing_header =
         lookup_result.s == Outdated
             ? lookup_result.entry.GetIndex().hlist->HeaderRecord()
@@ -43,7 +41,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
     // header point to itself
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::HashHeader, RecordStatus::Normal,
+        RecordType::HashRecord, RecordStatus::Normal,
         pmem_allocator_->addr2offset(existing_header), space.offset,
         space.offset, collection, value_str);
     hlist = std::make_shared<HashList>(pmem_record, collection, id,
@@ -51,7 +49,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
                                        dllist_locks_.get());
     kvdk_assert(hlist != nullptr, "");
     addHashlistToMap(hlist);
-    insertKeyOrElem(lookup_result, RecordType::HashHeader, RecordStatus::Normal,
+    insertKeyOrElem(lookup_result, RecordType::HashRecord, RecordStatus::Normal,
                     hlist.get());
     return Status::Ok;
   } else {
@@ -60,11 +58,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
 }
 
 Status KVEngine::HashDestroy(StringView collection) {
-  auto s = maybeInitAccessThread();
-  defer(ReleaseAccessThread());
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
@@ -74,10 +68,11 @@ Status KVEngine::HashDestroy(StringView collection) {
   auto snapshot_holder = version_controller_.GetLocalSnapshotHolder();
   auto new_ts = snapshot_holder.Timestamp();
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
+    auto destroy = acquireCollectionCreateOrDestroyLock();
     DLRecord* header = hlist->HeaderRecord();
-    kvdk_assert(header->GetRecordType() == RecordType::HashHeader, "");
+    kvdk_assert(header->GetRecordType() == RecordType::HashRecord, "");
     StringView value = header->Value();
     auto request_size = DLRecord::RecordSize(collection, value);
     SpaceEntry space = pmem_allocator_->Allocate(request_size);
@@ -86,12 +81,12 @@ Status KVEngine::HashDestroy(StringView collection) {
     }
     DLRecord* pmem_record = DLRecord::PersistDLRecord(
         pmem_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
-        RecordType::HashHeader, RecordStatus::Outdated,
+        RecordType::HashRecord, RecordStatus::Outdated,
         pmem_allocator_->addr2offset_checked(header), header->prev,
         header->next, collection, value);
     bool success = hlist->Replace(header, pmem_record);
     kvdk_assert(success, "existing header should be linked on its hlist");
-    hash_table_->Insert(collection, RecordType::HashHeader,
+    hash_table_->Insert(collection, RecordType::HashRecord,
                         RecordStatus::Outdated, hlist, PointerType::HashList);
     {
       std::unique_lock<std::mutex> hlist_lock(hlists_mu_);
@@ -105,9 +100,7 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
   if (!checkKeySize(collection)) {
     return Status::InvalidDataSize;
   }
-  if (maybeInitAccessThread() != Status::Ok) {
-    return Status::TooManyAccessThreads;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   auto token = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
@@ -121,17 +114,13 @@ Status KVEngine::HashSize(StringView collection, size_t* len) {
 
 Status KVEngine::HashGet(StringView collection, StringView key,
                          std::string* value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     s = hlist->Get(key, value);
   }
@@ -140,17 +129,13 @@ Status KVEngine::HashGet(StringView collection, StringView key,
 
 Status KVEngine::HashPut(StringView collection, StringView key,
                          StringView value) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!checkKeySize(collection_key) || !checkValueSize(value)) {
@@ -172,17 +157,13 @@ Status KVEngine::HashPut(StringView collection, StringView key,
 }
 
 Status KVEngine::HashDelete(StringView collection, StringView key) {
-  Status s = maybeInitAccessThread();
-
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
 
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string collection_key(hlist->InternalKey(key));
     if (!checkKeySize(collection_key)) {
@@ -204,15 +185,12 @@ Status KVEngine::HashDelete(StringView collection, StringView key) {
 
 Status KVEngine::HashModify(StringView collection, StringView key,
                             ModifyFunc modify_func, void* cb_args) {
-  Status s = maybeInitAccessThread();
-  if (s != Status::Ok) {
-    return s;
-  }
+  auto thread_holder = AcquireAccessThread();
 
   // Hold current snapshot in this thread
   auto holder = version_controller_.GetLocalSnapshotHolder();
   HashList* hlist;
-  s = hashListFind(collection, &hlist);
+  Status s = hashListFind(collection, &hlist);
   if (s == Status::Ok) {
     std::string internal_key(hlist->InternalKey(key));
     auto ul = hash_table_->AcquireLock(internal_key);
@@ -272,7 +250,7 @@ void KVEngine::HashIteratorRelease(HashIterator* hash_iter) {
 Status KVEngine::hashListFind(StringView collection, HashList** hlist) {
   // Callers should acquire the access token or snapshot.
   // Lockless lookup for the collection
-  auto result = lookupKey<false>(collection, RecordType::HashHeader);
+  auto result = lookupKey<false>(collection, RecordType::HashRecord);
   if (result.s == Status::Outdated) {
     return Status::NotFound;
   }
