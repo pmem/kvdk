@@ -1,5 +1,0 @@
-io/pmem/kvdk/WriteBatchTest.class
-io/pmem/kvdk/EngineTest.class
-io/pmem/kvdk/ConfigsTest.class
-io/pmem/kvdk/EngineTestBase.class
-io/pmem/kvdk/IteratorTest.class
