@@ -4,7 +4,7 @@
 
 `KVDK` (Key-Value Development Kit) is a key-value store library implemented in C++ language. It is designed for supporting Optane persistent memory, DRAM and CXL memory pool. It also demonstrates several optimization methods for high performance with tiered memory. Besides providing the basic APIs of key-value store, it offers several advanced features, like read-modify-write, checkpoint, etc.
 
-**Notice: The DRAM engine and CXL memory pool are in development, you can checkout to release version 1.0 for a stable version of PMEM engine.**
+**Notice: The DRAM engine and CXL memory pool are in development, you can checkout to v1.0 for a release version of PMEM based persistent engine.**
 
 ## Getting the Source
 ```bash
