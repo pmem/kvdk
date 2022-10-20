@@ -1,8 +1,0 @@
-Init 64 readers and 0 writers.
-----------------------------------------------------------
-       Time(ms)       Read Ops      Write Ops      Not Found     Total Read    Total Write
-           1000    10737418240              0              0    10737418240              0
-Benchmark finished.
-finish bench
-----------------------------------------------------------
-Average Read Ops:	10737418240. Average Write Ops:	0
