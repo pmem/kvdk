@@ -9,9 +9,14 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Check Java codestyle
+      - name: Check Persistent Java codestyle
         run: |
-          cd java
+          cd persistent/java
+          mvn spotless:check
+
+      - name: Check Volatile Java codestyle
+        run: |
+          cd volatile/java
           mvn spotless:check
 
       - name: Get cmake
@@ -36,8 +41,16 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive
 
-      - name: Check codestyle & Build
+      - name: Check Persistent codestyle & Build
         run: |
+          cd persistent
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON
+          make -j
+
+      - name: Check Volatile codestyle & Build
+        run: |
+          cd volatile
           mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release -DCHECK_CPP_STYLE=ON -DWITH_JNI=ON
           make -j
