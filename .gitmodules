@@ -1,9 +1,3 @@
-[submodule "persistent/extern/googletest"]
-	path = persistent/extern/googletest
-	url = https://github.com/google/googletest.git
-[submodule "volatile/extern/googletest"]
-	path = volatile/extern/googletest
-	url = https://github.com/google/googletest.git
 [submodule "volatile/extern/jemalloc"]
 	path = volatile/extern/jemalloc
 	url = https://github.com/jemalloc/jemalloc
