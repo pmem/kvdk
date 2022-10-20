@@ -40,8 +40,8 @@ cmake-build-*
 build/
 .cache/
 
-scripts/result*
-scripts/__pycache__
+*/scripts/result*
+*/scripts/__pycache__
 
 java/out
 java/target
