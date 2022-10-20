@@ -69,16 +69,6 @@ void Java_io_pmem_kvdk_Configs_setOptLargeSortedCollectionRecovery(
 
 /*
  * Class:     io_pmem_kvdk_Configs
- * Method:    setUseDevDaxMode
- * Signature: (JZ)V
- */
-void Java_io_pmem_kvdk_Configs_setUseDevDaxMode(JNIEnv*, jobject, jlong handle,
-                                                jboolean use) {
-  reinterpret_cast<KVDK_NAMESPACE::Configs*>(handle)->use_devdax_mode = use;
-}
-
-/*
- * Class:     io_pmem_kvdk_Configs
  * Method:    setCleanThreads
  * Signature: (JJ)V
  */
