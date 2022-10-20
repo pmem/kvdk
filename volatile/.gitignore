@@ -1,0 +1,53 @@
+# IDE related
+.idea/
+cmake-build-*
+.vscode/
+.vs/
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+build/
+.cache/
+
+scripts/result*
+scripts/__pycache__
+
+java/out
+java/target
+java/benchmark/target
+java/examples/target
+java/test-libs
+java/*.log
+java/include/io_pmem_*.h
+java/src/main/resources
