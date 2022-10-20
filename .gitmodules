@@ -4,3 +4,9 @@
 [submodule "volatile/extern/numactl"]
 	path = volatile/extern/numactl
 	url = https://github.com/numactl/numactl
+[submodule "persistent/extern/gtest"]
+	path = persistent/extern/gtest
+	url = https://github.com/google/googletest.git
+[submodule "volatile/extern/gtest"]
+	path = volatile/extern/gtest
+	url = https://github.com/google/googletest.git
