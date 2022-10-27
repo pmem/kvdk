@@ -1019,10 +1019,10 @@ T* KVEngine::removeOutDatedVersion(T* record, TimestampType min_snapshot_ts) {
     T* remove_record =
         kv_allocator_->offset2addr_checked<T>(old_record->old_version);
     ret = remove_record;
-    old_record->PersistOldVersion(kNullMemoryOffset);
+    old_record->SetOldVersion(kNullMemoryOffset);
     while (remove_record != nullptr) {
       if (remove_record->GetRecordStatus() == RecordStatus::Normal) {
-        remove_record->PersistStatus(RecordStatus::Dirty);
+        remove_record->SetStatus(RecordStatus::Dirty);
       }
       remove_record = kv_allocator_->offset2addr<T>(remove_record->old_version);
     }

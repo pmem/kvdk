@@ -59,7 +59,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
 
       StringRecord* new_record =
           kv_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-      StringRecord::PersistStringRecord(
+      StringRecord::ConstructStringRecord(
           new_record, space_entry.size, new_ts, RecordType::String,
           RecordStatus::Normal,
           existing_record == nullptr
@@ -79,7 +79,7 @@ Status KVEngine::Modify(const StringView key, ModifyFunc modify_func,
         }
 
         void* data_ptr = kv_allocator_->offset2addr_checked(space_entry.offset);
-        StringRecord::PersistStringRecord(
+        StringRecord::ConstructStringRecord(
             data_ptr, space_entry.size, new_ts, RecordType::String,
             RecordStatus::Outdated,
             kv_allocator_->addr2offset_checked(existing_record), key, "");
@@ -157,7 +157,7 @@ Status KVEngine::stringDeleteImpl(const StringView& key) {
 
     StringRecord* data_ptr =
         kv_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-    StringRecord::PersistStringRecord(
+    StringRecord::ConstructStringRecord(
         data_ptr, space_entry.size, new_ts, RecordType::String,
         RecordStatus::Outdated,
         kv_allocator_->addr2offset_checked(
@@ -220,10 +220,10 @@ Status KVEngine::stringPutImpl(const StringView& key, const StringView& value,
 
   StringRecord* new_record =
       kv_allocator_->offset2addr_checked<StringRecord>(space_entry.offset);
-  StringRecord::PersistStringRecord(new_record, space_entry.size, new_ts,
-                                    RecordType::String, RecordStatus::Normal,
-                                    kv_allocator_->addr2offset(existing_record),
-                                    key, value, expired_time);
+  StringRecord::ConstructStringRecord(
+      new_record, space_entry.size, new_ts, RecordType::String,
+      RecordStatus::Normal, kv_allocator_->addr2offset(existing_record), key,
+      value, expired_time);
 
   insertKeyOrElem(lookup_result, RecordType::String, RecordStatus::Normal,
                   new_record);
@@ -267,7 +267,7 @@ Status KVEngine::stringWrite(StringWriteArgs& args) {
     old_off = kv_allocator_->addr2offset_checked(
         args.res.entry.GetIndex().string_record);
   }
-  args.new_rec = StringRecord::PersistStringRecord(
+  args.new_rec = StringRecord::ConstructStringRecord(
       new_addr, args.space.size, args.ts, RecordType::String, record_status,
       old_off, args.key, args.value);
   return Status::Ok;

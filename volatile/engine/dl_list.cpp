@@ -71,7 +71,7 @@ Status DLList::InsertBetween(const DLList::WriteArgs& args, DLRecord* prev,
     return Status::Fail;
   }
 
-  DLRecord* new_record = DLRecord::PersistDLRecord(
+  DLRecord* new_record = DLRecord::ConstructDLRecord(
       kv_allocator_->offset2addr_checked(args.space.offset), args.space.size,
       args.ts, args.type, args.status, kNullMemoryOffset, prev_offset,
       next_offset, args.key, args.val);
@@ -102,7 +102,7 @@ Status DLList::Update(const DLList::WriteArgs& args, DLRecord* current) {
   if (next->prev != current_offset || prev->next != current_offset) {
     return Status::Fail;
   }
-  DLRecord* new_record = DLRecord::PersistDLRecord(
+  DLRecord* new_record = DLRecord::ConstructDLRecord(
       kv_allocator_->offset2addr_checked(args.space.offset), args.space.size,
       args.ts, args.type, args.status, current_offset, prev_offset, next_offset,
       args.key, args.val);
@@ -144,7 +144,7 @@ bool DLList::Replace(DLRecord* old_record, DLRecord* new_record,
                   "Non-header record shouldn't be the only record in a list");
       linkRecord(new_record, new_record, new_record, kv_allocator);
       auto new_record_offset = kv_allocator->addr2offset(new_record);
-      old_record->PersistPrevNT(new_record_offset);
+      old_record->SetPrev(new_record_offset);
     } else {
       new_record->prev = prev_offset;
       new_record->next = next_offset;

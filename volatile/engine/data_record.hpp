@@ -105,19 +105,12 @@ struct StringRecord {
       void* target_address, uint32_t _record_size, TimestampType _timestamp,
       RecordType _record_type, RecordStatus _record_status,
       MemoryOffsetType _old_version, const StringView& _key,
-      const StringView& _value, ExpireTimeType _expired_time) {
+      const StringView& _value, ExpireTimeType _expired_time = kPersistTime) {
     StringRecord* record = new (target_address)
         StringRecord(_record_size, _timestamp, _record_type, _record_status,
                      _old_version, _key, _value, _expired_time);
     return record;
   }
-
-  // Construct a string record at "addr"
-  static StringRecord* PersistStringRecord(
-      void* addr, uint32_t record_size, TimestampType timestamp,
-      RecordType type, RecordStatus status, MemoryOffsetType old_version,
-      const StringView& key, const StringView& value,
-      ExpireTimeType expired_time = kPersistTime);
 
   void Destroy() { entry.Destroy(); }
 
@@ -155,29 +148,11 @@ struct StringRecord {
   ExpireTimeType GetExpireTime() const { return expired_time; }
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
 
-  void PersistExpireTimeNT(ExpireTimeType time) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
-                    static_cast<long long>(time));
-    _mm_mfence();
-  }
+  void SetExpireTime(ExpireTimeType time) { expired_time = time; }
 
-  void PersistExpireTimeCLWB(ExpireTimeType time) {
-    expired_time = time;
-    _mm_clwb(&expired_time);
-    _mm_mfence();
-  }
+  void SetOldVersion(MemoryOffsetType offset) { old_version = offset; }
 
-  void PersistOldVersion(MemoryOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
-                    static_cast<long long>(offset));
-    _mm_mfence();
-  }
-
-  void PersistStatus(RecordStatus status) {
-    entry.meta.status = status;
-    _mm_clwb(&entry.meta.status);
-    _mm_mfence();
-  }
+  void SetStatus(RecordStatus status) { entry.meta.status = status; }
 
   TimestampType GetTimestamp() const { return entry.meta.timestamp; }
 
@@ -243,7 +218,7 @@ struct DLRecord {
       RecordType record_type, RecordStatus record_status,
       MemoryOffsetType old_version, uint64_t prev, uint64_t next,
       const StringView& key, const StringView& value,
-      ExpireTimeType expired_time) {
+      ExpireTimeType expired_time = kPersistTime) {
     DLRecord* record = new (target_address)
         DLRecord(record_size, timestamp, record_type, record_status,
                  old_version, prev, next, key, value, expired_time);
@@ -272,55 +247,18 @@ struct DLRecord {
     return StringView(data + entry.meta.k_size, entry.meta.v_size);
   }
 
-  void PersistNextNT(MemoryOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&next),
-                    static_cast<long long>(offset));
-    _mm_mfence();
-  }
+  void SetNext(MemoryOffsetType offset) { next = offset; }
 
-  void PersistPrevNT(MemoryOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&prev),
-                    static_cast<long long>(offset));
-    _mm_mfence();
-  }
+  void SetPrev(MemoryOffsetType offset) { prev = offset; }
 
-  void PersistExpireTimeNT(ExpireTimeType time) {
-    kvdk_assert(entry.meta.type & ExpirableRecordType, "");
-    _mm_stream_si64(reinterpret_cast<long long*>(&expired_time),
-                    static_cast<long long>(time));
-    _mm_mfence();
-  }
-
-  void PersistNextCLWB(MemoryOffsetType offset) {
-    next = offset;
-    _mm_clwb(&next);
-    _mm_mfence();
-  }
-
-  void PersistPrevCLWB(MemoryOffsetType offset) {
-    prev = offset;
-    _mm_clwb(&prev);
-    _mm_mfence();
-  }
-
-  void PersistExpireTimeCLWB(ExpireTimeType time) {
+  void SetPrevSetExpireTime(ExpireTimeType time) {
     kvdk_assert(entry.meta.type & ExpirableRecordType, "");
     expired_time = time;
-    _mm_clwb(&expired_time);
-    _mm_mfence();
   }
 
-  void PersistOldVersion(MemoryOffsetType offset) {
-    _mm_stream_si64(reinterpret_cast<long long*>(&old_version),
-                    static_cast<long long>(offset));
-    _mm_mfence();
-  }
+  void SetOldVersion(MemoryOffsetType offset) { old_version = offset; }
 
-  void PersistStatus(RecordStatus status) {
-    entry.meta.status = status;
-    _mm_clwb(&entry.meta.status);
-    _mm_mfence();
-  }
+  void SetStatus(RecordStatus status) { entry.meta.status = status; }
 
   ExpireTimeType GetExpireTime() const {
     kvdk_assert(entry.meta.type & ExpirableRecordType,
@@ -334,13 +272,6 @@ struct DLRecord {
 
   bool HasExpired() const { return TimeUtils::CheckIsExpired(GetExpireTime()); }
   TimestampType GetTimestamp() const { return entry.meta.timestamp; }
-
-  // Construct a dl record at "addr"
-  static DLRecord* PersistDLRecord(
-      void* addr, uint32_t record_size, TimestampType timestamp,
-      RecordType type, RecordStatus status, MemoryOffsetType old_version,
-      MemoryOffsetType prev, MemoryOffsetType next, const StringView& key,
-      const StringView& value, ExpireTimeType expired_time = kPersistTime);
 
   uint32_t GetRecordSize() const { return entry.header.record_size; }
 

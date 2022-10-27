@@ -123,9 +123,9 @@ class DLList {
                          DLRecord* linking_record, Allocator* kv_allocator) {
     auto linking_record_offset =
         kv_allocator->addr2offset_checked(linking_record);
-    prev->PersistNextNT(linking_record_offset);
+    prev->SetNext(linking_record_offset);
     TEST_SYNC_POINT("KVEngine::DLList::LinkDLRecord::HalfLink");
-    next->PersistPrevNT(linking_record_offset);
+    next->SetPrev(linking_record_offset);
   }
 
   DLRecord* header_;
@@ -293,7 +293,7 @@ class DLListRecoveryUtils {
     if (CheckPrevLinkage(record)) {
       DLRecord* next =
           kv_allocator_->offset2addr_checked<DLRecord>(record->next);
-      next->PersistPrevNT(kv_allocator_->addr2offset_checked(record));
+      next->SetPrev(kv_allocator_->addr2offset_checked(record));
       return true;
     }
 

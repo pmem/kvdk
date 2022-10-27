@@ -32,7 +32,7 @@ void KVEngine::removeOutdatedCollection(T* collection) {
                         getHashlist(old_collection_id) != nullptr ||
                         getList(old_collection_id) != nullptr,
                     "collection should not be destroyed yet!");
-        cur_head_record->PersistOldVersion(kNullMemoryOffset);
+        cur_head_record->SetOldVersion(kNullMemoryOffset);
         cur_id = old_collection_id;
       }
     }
@@ -178,7 +178,7 @@ void KVEngine::purgeAndFreeDLRecords(
                   data_record->GetRecordSize());
               data_record->Destroy();
             } else {
-              data_record->PersistOldVersion(kNullMemoryOffset);
+              data_record->SetOldVersion(kNullMemoryOffset);
             }
           }
           break;
@@ -201,7 +201,7 @@ void KVEngine::purgeAndFreeDLRecords(
                   data_record->GetRecordSize());
               data_record->Destroy();
             } else {
-              data_record->PersistOldVersion(kNullMemoryOffset);
+              data_record->SetOldVersion(kNullMemoryOffset);
             }
           }
           break;
@@ -224,7 +224,7 @@ void KVEngine::purgeAndFreeDLRecords(
                   data_record->GetRecordSize());
               data_record->Destroy();
             } else {
-              data_record->PersistOldVersion(kNullMemoryOffset);
+              data_record->SetOldVersion(kNullMemoryOffset);
             }
           }
           break;

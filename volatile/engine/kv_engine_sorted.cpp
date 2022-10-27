@@ -50,7 +50,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
 
     // Data level of dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* data_record = DLRecord::PersistDLRecord(
+    DLRecord* data_record = DLRecord::ConstructDLRecord(
         kv_allocator_->offset2addr(space_entry.offset), space_entry.size,
         new_ts, RecordType::SortedHeader, RecordStatus::Normal,
         kv_allocator_->addr2offset(existing_header), space_entry.offset,
@@ -88,7 +88,7 @@ Status KVEngine::SortedDestroy(const StringView collection_name) {
     if (space_entry.size == 0) {
       return Status::MemoryOverflow;
     }
-    DLRecord* data_record = DLRecord::PersistDLRecord(
+    DLRecord* data_record = DLRecord::ConstructDLRecord(
         kv_allocator_->offset2addr_checked(space_entry.offset),
         space_entry.size, new_ts, RecordType::SortedHeader,
         RecordStatus::Outdated, kv_allocator_->addr2offset_checked(header),

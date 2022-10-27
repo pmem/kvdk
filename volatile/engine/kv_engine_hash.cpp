@@ -38,7 +38,7 @@ Status KVEngine::buildHashlist(const StringView& collection,
     }
     // dl list is circular, so the next and prev pointers of
     // header point to itself
-    DLRecord* data_record = DLRecord::PersistDLRecord(
+    DLRecord* data_record = DLRecord::ConstructDLRecord(
         kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Normal,
         kv_allocator_->addr2offset(existing_header), space.offset, space.offset,
@@ -77,7 +77,7 @@ Status KVEngine::HashDestroy(StringView collection) {
     if (space.size == 0) {
       return Status::MemoryOverflow;
     }
-    DLRecord* data_record = DLRecord::PersistDLRecord(
+    DLRecord* data_record = DLRecord::ConstructDLRecord(
         kv_allocator_->offset2addr_checked(space.offset), space.size, new_ts,
         RecordType::HashHeader, RecordStatus::Outdated,
         kv_allocator_->addr2offset_checked(header), header->prev, header->next,

@@ -15,7 +15,7 @@ List::WriteResult List::SetExpireTime(ExpireTimeType expired_time,
     ret.s = Status::MemoryOverflow;
     return ret;
   }
-  DLRecord* data_record = DLRecord::PersistDLRecord(
+  DLRecord* data_record = DLRecord::ConstructDLRecord(
       kv_allocator_->offset2addr_checked(space.offset), space.size, timestamp,
       RecordType::ListHeader, RecordStatus::Normal,
       kv_allocator_->addr2offset_checked(header), header->prev, header->next,
