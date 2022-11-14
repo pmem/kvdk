@@ -22,9 +22,9 @@ using namespace KVDK_NAMESPACE;
 // Benchmark configs
 DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
 
-DEFINE_uint64(num_kv, (1 << 30), "Number of KVs to place");
+DEFINE_uint64(num_kv, (1 << 23), "Number of KVs to place");
 
-DEFINE_uint64(num_operations, (1 << 30),
+DEFINE_uint64(num_operations, (1 << 20),
               "Number of total operations. "
               "num_kv will override this when benchmarking fill/insert");
 
@@ -63,14 +63,10 @@ DEFINE_string(key_distribution, "random",
               "be ignored and only uniform distribution will be used");
 
 // Engine configs
-DEFINE_bool(
-    populate, false,
-    "Populate pmem space while creating a new instance. This can improve write "
-    "performance in runtime, but will take long time to init the instance");
-
 DEFINE_uint64(max_access_threads, 64, "Max access threads of the instance");
 
-DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
+DEFINE_uint64(hash_bucket_num, (1 << 20),
+              "The number of initial buckets in hash table");
 
 DEFINE_bool(opt_large_sorted_collection_restore, true,
             " Optional optimization strategy which Multi-thread recovery a "
@@ -129,6 +125,7 @@ double existing_keys_ratio = 0;
 std::uint64_t batch_size = 0;
 bool scan = false;
 std::uint64_t num_operations = 0;
+std::uint64_t benchmark_threads = 0;
 
 std::uint64_t max_key = UINT64_MAX;
 extd::zipfian_distribution<std::uint64_t>* zipf = nullptr;
@@ -422,6 +419,7 @@ void InitializeBenchmark() {
   if (bench_data_type != DataType::Blackhole) {
     Configs configs;
     configs.max_access_threads = FLAGS_max_access_threads;
+    configs.hash_bucket_num = FLAGS_hash_bucket_num;
     configs.opt_large_sorted_collection_recovery =
         FLAGS_opt_large_sorted_collection_restore;
     configs.dest_memory_nodes = FLAGS_dest_memory_nodes;
@@ -483,18 +481,19 @@ void ProcessBenchmarkConfigs() {
     throw std::invalid_argument{"value size too large"};
   }
 
-  random_engines.resize(FLAGS_threads);
+  benchmark_threads = fill ? FLAGS_max_access_threads : FLAGS_threads;
+  random_engines.resize(benchmark_threads);
   if (fill) {
     assert(read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    operations_per_thread = FLAGS_num_kv / FLAGS_max_access_threads + 1;
+    operations_per_thread = FLAGS_num_kv / benchmark_threads + 1;
     ranges.clear();
-    for (size_t i = 0; i < FLAGS_max_access_threads; i++) {
+    for (size_t i = 0; i < benchmark_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
   } else {
-    operations_per_thread = num_operations / FLAGS_threads;
+    operations_per_thread = num_operations / benchmark_threads;
     if (FLAGS_key_distribution == "random") {
       key_dist = KeyDistribution::Uniform;
     } else if (FLAGS_key_distribution == "zipf") {
@@ -527,12 +526,12 @@ void ResetBenchmarkData() {
   read_not_found = 0;
   has_timed_out = false;
   has_finished.clear();
-  has_finished.resize(FLAGS_threads, 0);
+  has_finished.resize(benchmark_threads, 0);
 
   if (FLAGS_latency) {
     printf("calculate latencies\n");
     latencies.clear();
-    latencies.resize(FLAGS_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
+    latencies.resize(benchmark_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
   }
 }
 
@@ -541,9 +540,9 @@ void RunBenchmark() {
   ResetBenchmarkData();
 
   size_t write_threads =
-      fill ? FLAGS_max_access_threads
-           : FLAGS_threads - read_ratio * 100 * FLAGS_threads / 100;
-  int read_threads = FLAGS_threads - write_threads;
+      fill ? benchmark_threads
+           : benchmark_threads - read_ratio * 100 * benchmark_threads / 100;
+  int read_threads = fill ? 0 : benchmark_threads - write_threads;
   std::vector<std::thread> ts;
 
   switch (bench_data_type) {
@@ -587,7 +586,7 @@ void RunBenchmark() {
   for (size_t i = 0; i < write_threads; i++) {
     ts.emplace_back(DBWrite, i);
   }
-  for (size_t i = write_threads; i < FLAGS_threads; i++) {
+  for (size_t i = write_threads; i < benchmark_threads; i++) {
     ts.emplace_back(scan ? DBScan : DBRead, i);
   }
 
@@ -628,7 +627,7 @@ void RunBenchmark() {
     if (num_finished == 0 || idx < 2) {
       last_effective_idx = idx;
     }
-    if (num_finished == FLAGS_threads) {
+    if (num_finished == benchmark_threads) {
       break;
     }
     if (!fill && (duration.count() >= FLAGS_timeout * 1000)) {
