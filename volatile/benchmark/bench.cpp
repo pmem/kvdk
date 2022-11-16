@@ -22,13 +22,11 @@ using namespace KVDK_NAMESPACE;
 // Benchmark configs
 DEFINE_string(path, "/mnt/pmem0/kvdk", "Instance path");
 
-DEFINE_uint64(num_kv, (1 << 30), "Number of KVs to place");
+DEFINE_uint64(num_kv, (1 << 23), "Number of KVs to place");
 
-DEFINE_uint64(num_operations, (1 << 30),
-              "Number of total operations. Asserted to be equal to num_kv if "
-              "(fill == true).");
-
-DEFINE_bool(fill, false, "Fill num_kv uniform kv pairs to a new instance");
+DEFINE_uint64(num_operations, (1 << 20),
+              "Number of total operations. "
+              "num_kv will override this when benchmarking fill/insert");
 
 DEFINE_int64(timeout, 30,
              "Time to benchmark, this is valid only if fill=false");
@@ -40,15 +38,9 @@ DEFINE_string(value_size_distribution, "constant",
               "default is constant. If set to random, the max value size "
               "will be FLAGS_value_size.");
 
-DEFINE_uint64(threads, 10, "Number of concurrent threads to run benchmark");
-
-DEFINE_double(read_ratio, 0, "Read threads = threads * read_ratio");
-
-DEFINE_double(
-    existing_keys_ratio, 1,
-    "Ratio of keys to read / write that existed in the filled instance, for "
-    "example, if set to "
-    "1, all writes will be updates, and all read keys will be existed");
+DEFINE_uint64(threads, 10,
+              "Number of concurrent threads to run benchmark. "
+              "max_access_threads will override this when benchmarking fill.");
 
 DEFINE_bool(latency, false, "Stat operation latencies");
 
@@ -56,12 +48,10 @@ DEFINE_string(type, "string",
               "Storage engine to benchmark, can be string, sorted, hash, list "
               "or blackhole");
 
-DEFINE_bool(scan, false,
-            "If set true, read threads will do scan operations, this is valid "
-            "only if we benchmark sorted or hash engine");
-
 DEFINE_uint64(num_collection, 1,
-              "Number of collections in the instance to benchmark");
+              "Number of collections in the instance to benchmark. "
+              "This will be ignored when benchmarking data type "
+              "string/blackhole.");
 
 DEFINE_uint64(
     batch_size, 0,
@@ -73,14 +63,10 @@ DEFINE_string(key_distribution, "random",
               "be ignored and only uniform distribution will be used");
 
 // Engine configs
-DEFINE_bool(
-    populate, false,
-    "Populate pmem space while creating a new instance. This can improve write "
-    "performance in runtime, but will take long time to init the instance");
-
 DEFINE_uint64(max_access_threads, 64, "Max access threads of the instance");
 
-DEFINE_uint64(space, (256ULL << 30), "Max usable PMem space of the instance");
+DEFINE_uint64(hash_bucket_num, (1 << 20),
+              "The number of initial buckets in hash table");
 
 DEFINE_bool(opt_large_sorted_collection_restore, true,
             " Optional optimization strategy which Multi-thread recovery a "
@@ -88,6 +74,10 @@ DEFINE_bool(opt_large_sorted_collection_restore, true,
             "get better performance");
 
 DEFINE_bool(use_devdax_mode, false, "Use devdax device for kvdk");
+
+DEFINE_string(dest_memory_nodes, "",
+              "Set the memory nodes where volatile KV "
+              "memory allocator binds to");
 
 class Timer {
  public:
@@ -128,12 +118,20 @@ enum class KeyDistribution { Range, Uniform, Zipf } key_dist;
 
 enum class ValueSizeDistribution { Constant, Uniform } vsz_dist;
 
+// Define variables those differ across benchmarks
+bool fill = false;
+double read_ratio = 0;
+double existing_keys_ratio = 0;
+std::uint64_t batch_size = 0;
+bool scan = false;
+std::uint64_t num_operations = 0;
+std::uint64_t benchmark_threads = 0;
+
+std::uint64_t max_key = UINT64_MAX;
+extd::zipfian_distribution<std::uint64_t>* zipf = nullptr;
+std::uniform_int_distribution<std::uint64_t> uniform{0, UINT64_MAX};
+
 std::uint64_t generate_key(size_t tid) {
-  static std::uint64_t max_key = FLAGS_existing_keys_ratio == 0
-                                     ? UINT64_MAX
-                                     : FLAGS_num_kv / FLAGS_existing_keys_ratio;
-  static extd::zipfian_distribution<std::uint64_t> zipf{max_key, 0.99};
-  static std::uniform_int_distribution<std::uint64_t> uniform{0, max_key};
   switch (key_dist) {
     case KeyDistribution::Range: {
       return ranges[tid].gen();
@@ -142,7 +140,7 @@ std::uint64_t generate_key(size_t tid) {
       return uniform(random_engines[tid].gen);
     }
     case KeyDistribution::Zipf: {
-      return zipf(random_engines[tid].gen);
+      return (*zipf)(random_engines[tid].gen);
     }
     default: {
       throw;
@@ -189,11 +187,11 @@ void DBWrite(int tid) {
     Status s;
     switch (bench_data_type) {
       case DataType::String: {
-        if (FLAGS_batch_size == 0) {
+        if (batch_size == 0) {
           s = engine->Put(key, value, WriteOptions());
         } else {
           batch->StringPut(key, std::string{value.data(), value.size()});
-          if (operations % FLAGS_batch_size == 0) {
+          if ((operations + 1) % batch_size == 0) {
             s = engine->BatchWrite(batch);
             batch->Clear();
           }
@@ -201,12 +199,12 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Sorted: {
-        if (FLAGS_batch_size == 0) {
+        if (batch_size == 0) {
           s = engine->SortedPut(collections[cid], key, value);
         } else {
           batch->SortedPut(collections[cid], key,
                            std::string{value.data(), value.size()});
-          if (operations % FLAGS_batch_size == 0) {
+          if ((operations + 1) % batch_size == 0) {
             s = engine->BatchWrite(batch);
             batch->Clear();
           }
@@ -214,12 +212,12 @@ void DBWrite(int tid) {
         break;
       }
       case DataType::Hashes: {
-        if (FLAGS_batch_size == 0) {
+        if (batch_size == 0) {
           s = engine->HashPut(collections[cid], key, value);
         } else {
           batch->HashPut(collections[cid], key,
                          std::string{value.data(), value.size()});
-          if (operations % FLAGS_batch_size == 0) {
+          if ((operations + 1) % batch_size == 0) {
             s = engine->BatchWrite(batch);
             batch->Clear();
           }
@@ -403,7 +401,7 @@ void DBRead(int tid) {
   return;
 }
 
-void ProcessBenchmarkConfigs() {
+void InitializeBenchmark() {
   if (FLAGS_type == "sorted") {
     bench_data_type = DataType::Sorted;
   } else if (FLAGS_type == "string") {
@@ -417,6 +415,33 @@ void ProcessBenchmarkConfigs() {
   } else {
     throw std::invalid_argument{"Unsupported data type"};
   }
+
+  if (bench_data_type != DataType::Blackhole) {
+    Configs configs;
+    configs.max_access_threads = FLAGS_max_access_threads;
+    configs.hash_bucket_num = FLAGS_hash_bucket_num;
+    configs.opt_large_sorted_collection_recovery =
+        FLAGS_opt_large_sorted_collection_restore;
+    configs.dest_memory_nodes = FLAGS_dest_memory_nodes;
+    Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
+    if (s != Status::Ok) {
+      throw std::runtime_error{
+          std::string{"Fail to open KVDK instance. Status: "} +
+          KVDKStatusStrings[static_cast<int>(s)]};
+    }
+  }
+
+  {
+    value_pool.clear();
+    value_pool.reserve(FLAGS_value_size);
+    std::default_random_engine rand_engine{42};
+    for (size_t i = 0; i < FLAGS_value_size; i++) {
+      value_pool.push_back('a' + rand_engine() % 26);
+    }
+  }
+}
+
+void ProcessBenchmarkConfigs() {
   // Initialize collections and batch parameters
   switch (bench_data_type) {
     case DataType::String:
@@ -434,7 +459,7 @@ void ProcessBenchmarkConfigs() {
     }
   }
 
-  if (FLAGS_batch_size > 0 && (bench_data_type == DataType::List)) {
+  if (batch_size > 0 && (bench_data_type == DataType::List)) {
     throw std::invalid_argument{R"(List does not support batch write.)"};
   }
 
@@ -442,7 +467,7 @@ void ProcessBenchmarkConfigs() {
   switch (bench_data_type) {
     case DataType::String:
     case DataType::List: {
-      if (FLAGS_scan) {
+      if (scan) {
         throw std::invalid_argument{
             R"(Scan is not supported for "String" and "List" type data.)"};
       }
@@ -456,17 +481,19 @@ void ProcessBenchmarkConfigs() {
     throw std::invalid_argument{"value size too large"};
   }
 
-  random_engines.resize(FLAGS_threads);
-  if (FLAGS_fill) {
-    assert(FLAGS_read_ratio == 0);
+  benchmark_threads = fill ? FLAGS_max_access_threads : FLAGS_threads;
+  random_engines.resize(benchmark_threads);
+  if (fill) {
+    assert(read_ratio == 0);
     key_dist = KeyDistribution::Range;
-    operations_per_thread = FLAGS_num_kv / FLAGS_threads + 1;
-    for (size_t i = 0; i < FLAGS_threads; i++) {
+    operations_per_thread = FLAGS_num_kv / benchmark_threads + 1;
+    ranges.clear();
+    for (size_t i = 0; i < benchmark_threads; i++) {
       ranges.emplace_back(i * operations_per_thread,
                           (i + 1) * operations_per_thread);
     }
   } else {
-    operations_per_thread = FLAGS_num_operations / FLAGS_threads;
+    operations_per_thread = num_operations / benchmark_threads;
     if (FLAGS_key_distribution == "random") {
       key_dist = KeyDistribution::Uniform;
     } else if (FLAGS_key_distribution == "zipf") {
@@ -483,44 +510,40 @@ void ProcessBenchmarkConfigs() {
   } else {
     throw std::runtime_error{"Invalid value size distribution"};
   }
+
+  max_key = existing_keys_ratio == 0 ? UINT64_MAX
+                                     : FLAGS_num_kv / existing_keys_ratio;
+  if (zipf) {
+    free(zipf);
+  }
+  zipf = new extd::zipfian_distribution<std::uint64_t>(max_key, 0.99);
+  uniform = std::uniform_int_distribution<std::uint64_t>(0, max_key);
 }
 
-int main(int argc, char** argv) {
-  ParseCommandLineFlags(&argc, &argv, true);
-  ProcessBenchmarkConfigs();
-
-  if (bench_data_type != DataType::Blackhole) {
-    Configs configs;
-    configs.max_access_threads = FLAGS_max_access_threads;
-    configs.opt_large_sorted_collection_recovery =
-        FLAGS_opt_large_sorted_collection_restore;
-    Status s = Engine::Open(FLAGS_path, &engine, configs, stdout);
-    if (s != Status::Ok) {
-      throw std::runtime_error{
-          std::string{"Fail to open KVDK instance. Status: "} +
-          KVDKStatusStrings[static_cast<int>(s)]};
-    }
-  }
-
-  {
-    value_pool.clear();
-    value_pool.reserve(FLAGS_value_size);
-    std::default_random_engine rand_engine{42};
-    for (size_t i = 0; i < FLAGS_value_size; i++) {
-      value_pool.push_back('a' + rand_engine() % 26);
-    }
-  }
-
-  size_t write_threads =
-      FLAGS_fill ? FLAGS_threads
-                 : FLAGS_threads - FLAGS_read_ratio * 100 * FLAGS_threads / 100;
-  int read_threads = FLAGS_threads - write_threads;
-  std::vector<std::thread> ts;
+void ResetBenchmarkData() {
+  read_ops = 0;
+  write_ops = 0;
+  read_not_found = 0;
+  has_timed_out = false;
+  has_finished.clear();
+  has_finished.resize(benchmark_threads, 0);
 
   if (FLAGS_latency) {
     printf("calculate latencies\n");
-    latencies.resize(FLAGS_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
+    latencies.clear();
+    latencies.resize(benchmark_threads, std::vector<std::uint64_t>(MAX_LAT, 0));
   }
+}
+
+void RunBenchmark() {
+  ProcessBenchmarkConfigs();
+  ResetBenchmarkData();
+
+  size_t write_threads =
+      fill ? benchmark_threads
+           : benchmark_threads - read_ratio * 100 * benchmark_threads / 100;
+  int read_threads = fill ? 0 : benchmark_threads - write_threads;
+  std::vector<std::thread> ts;
 
   switch (bench_data_type) {
     case DataType::Sorted: {
@@ -557,16 +580,14 @@ int main(int argc, char** argv) {
     }
   }
 
-  has_finished.resize(FLAGS_threads, 0);
-
   std::cout << "Init " << read_threads << " readers "
             << "and " << write_threads << " writers." << std::endl;
 
   for (size_t i = 0; i < write_threads; i++) {
     ts.emplace_back(DBWrite, i);
   }
-  for (size_t i = write_threads; i < FLAGS_threads; i++) {
-    ts.emplace_back(FLAGS_scan ? DBScan : DBRead, i);
+  for (size_t i = write_threads; i < benchmark_threads; i++) {
+    ts.emplace_back(scan ? DBScan : DBRead, i);
   }
 
   size_t const field_width = 15;
@@ -606,10 +627,10 @@ int main(int argc, char** argv) {
     if (num_finished == 0 || idx < 2) {
       last_effective_idx = idx;
     }
-    if (num_finished == FLAGS_threads) {
+    if (num_finished == benchmark_threads) {
       break;
     }
-    if (!FLAGS_fill && (duration.count() >= FLAGS_timeout * 1000)) {
+    if (!fill && (duration.count() >= FLAGS_timeout * 1000)) {
       // Signal a timeout for read, scan, update and insert
       // Fill will never timeout
       has_timed_out = true;
@@ -656,7 +677,7 @@ int main(int argc, char** argv) {
       double l995 = 0;
       double l999 = 0;
       double l9999 = 0;
-      for (std::uint64_t i = 1; i <= MAX_LAT; i++) {
+      for (std::uint64_t i = 1; i < MAX_LAT; i++) {
         for (auto j = 0; j < read_threads; j++) {
           cur += latencies[write_threads + j][i];
           total += latencies[write_threads + j][i] * i;
@@ -692,7 +713,7 @@ int main(int argc, char** argv) {
       double l995 = 0;
       double l999 = 0;
       double l9999 = 0;
-      for (std::uint64_t i = 1; i <= MAX_LAT; i++) {
+      for (std::uint64_t i = 1; i < MAX_LAT; i++) {
         for (size_t j = 0; j < write_threads; j++) {
           cur += latencies[j][i];
           total += latencies[j][i] * i;
@@ -718,8 +739,108 @@ int main(int argc, char** argv) {
           avg, l50, l99, l995, l999, l9999);
     }
   }
+}
 
+void FinalizeBenchmark() {
   if (bench_data_type != DataType::Blackhole) delete engine;
+
+  if (zipf) {
+    free(zipf);
+  }
+}
+
+int main(int argc, char** argv) {
+  // Gflags function
+  ParseCommandLineFlags(&argc, &argv, true);
+
+  InitializeBenchmark();
+
+  // fill
+  std::cout << "##########################################################\n"
+            << "Benchmark started: fill" << std::endl;
+  fill = true;
+  read_ratio = 0;
+  existing_keys_ratio = 0;
+  batch_size = 0;
+  scan = false;
+  num_operations = FLAGS_num_operations;
+  RunBenchmark();
+
+  // random batch insert
+  std::cout << "##########################################################\n"
+            << "Benchmark started: random batch insert" << std::endl;
+  fill = false;
+  read_ratio = 0;
+  existing_keys_ratio = 0;
+  batch_size = 100;
+  scan = false;
+  if (bench_data_type != DataType::Blackhole) {
+    num_operations = FLAGS_num_kv;
+  }
+  RunBenchmark();
+
+  // random insert
+  std::cout << "##########################################################\n"
+            << "Benchmark started: random insert" << std::endl;
+  fill = false;
+  read_ratio = 0;
+  existing_keys_ratio = 0;
+  batch_size = 0;
+  scan = false;
+  if (bench_data_type != DataType::Blackhole) {
+    num_operations = FLAGS_num_kv;
+  }
+  RunBenchmark();
+
+  // range scan
+  if (bench_data_type != DataType::String &&
+      bench_data_type != DataType::List) {
+    std::cout << "##########################################################\n"
+              << "Benchmark started: range scan" << std::endl;
+    fill = false;
+    read_ratio = 1;
+    existing_keys_ratio = 1;
+    batch_size = 0;
+    scan = true;
+    num_operations = FLAGS_num_operations;
+    RunBenchmark();
+  }
+
+  // random read
+
+  std::cout << "##########################################################\n"
+            << "Benchmark started: random read" << std::endl;
+  fill = false;
+  read_ratio = 1;
+  existing_keys_ratio = 1;
+  batch_size = 0;
+  scan = false;
+  num_operations = FLAGS_num_operations;
+  RunBenchmark();
+
+  // random read write (9R:1W)
+  std::cout << "##########################################################\n"
+            << "Benchmark started: random read write (9R:1W)" << std::endl;
+  fill = false;
+  read_ratio = 0.9;
+  existing_keys_ratio = 1;
+  batch_size = 0;
+  scan = false;
+  num_operations = FLAGS_num_operations;
+  RunBenchmark();
+
+  // random update
+  std::cout << "##########################################################\n"
+            << "Benchmark started: random update" << std::endl;
+  fill = false;
+  read_ratio = 0;
+  existing_keys_ratio = 1;
+  batch_size = 0;
+  scan = false;
+  num_operations = FLAGS_num_operations;
+  RunBenchmark();
+
+  FinalizeBenchmark();
 
   return 0;
 }
