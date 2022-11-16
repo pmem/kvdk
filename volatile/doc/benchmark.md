@@ -30,7 +30,7 @@ Explanation of arguments:
 
     -value_size: Value length of values in Byte.
 
-    -latency: Print latencies of operations or not. Enable this makes benchmark use more memory.
+    -latency: Print latencies of operations or not. Enabling this makes benchmark use more memory.
 
     -dest_memory_nodes: The memory nodes to store KV data.
 
