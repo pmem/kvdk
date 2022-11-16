@@ -4,15 +4,15 @@ To test performance of KVDK, you can run our benchmark tool "bench", the tool is
 
 Here is an example to run benchmarks on `string` type:
 ```bash
-./bench -path=./kvdk_bench_dir -type=string -num_kv=8388608 -num_operations=1048576 -threads=10 -max_access_threads=64 -value_size=120 -latency=1
+./bench -path=./kvdk_bench_dir -type=string -num_kv=8388608 -num_operations=1048576 -threads=10 -max_access_threads=64 -value_size=120 -latency=0
 ```
 
 To benchmark performance when KVs are stored on separted memory nodes, we can use `numactl`:
 ```bash
-numactl --cpunodebind=0 --membind=0 ./bench -path=./kvdk_bench_dir -type=string -num_kv=8388608 -num_operations=1048576 -threads=10 -max_access_threads=64 -value_size=120 -latency=1 -dest_memory_nodes=1
+numactl --cpunodebind=0 --membind=0 ./bench -path=./kvdk_bench_dir -type=string -num_kv=8388608 -num_operations=1048576 -threads=10 -max_access_threads=64 -value_size=120 -latency=0 -dest_memory_nodes=1
 ```
 
-The above configurations will consume ~7 GB memory.
+The above configurations will consume ~5.4 GB memory. Specifically, ~4.5 GB memory is used by KVDK. ~0.9 GB memory is used by the benchmark itself.
 
 Explanation of arguments:
 
@@ -30,7 +30,7 @@ Explanation of arguments:
 
     -value_size: Value length of values in Byte.
 
-    -latency: Print latencies of operations or not.
+    -latency: Print latencies of operations or not. Enable this makes benchmark use more memory.
 
     -dest_memory_nodes: The memory nodes to store KV data.
 

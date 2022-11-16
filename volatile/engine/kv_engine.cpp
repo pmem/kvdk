@@ -1041,7 +1041,7 @@ template DLRecord* KVEngine::removeOutDatedVersion<DLRecord>(DLRecord*,
 namespace KVDK_NAMESPACE {
 
 /// TODO: move this into VersionController.
-Snapshot* KVEngine::GetSnapshot(bool make_checkpoint) {
+Snapshot* KVEngine::GetSnapshot(bool) {
   Snapshot* ret = version_controller_.NewGlobalSnapshot();
   return ret;
 }
