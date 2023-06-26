@@ -219,7 +219,7 @@ Status KVEngine::restoreData() {
   SpaceEntry segment_recovering;
   DataEntry data_entry_cached;
   uint64_t cnt = 0;
-  Status s;
+  Status s = Status::Ok;
   while (true) {
     if (segment_recovering.size == 0) {
       if (!pmem_allocator_->FetchSegment(&segment_recovering)) {
@@ -415,7 +415,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
       switch (slot_iter->GetRecordType()) {
         case RecordType::String: {
           StringRecord* record = slot_iter->GetIndex().string_record;
-          while (record != nullptr && record->GetTimestamp() > backup_ts) {
+          while (record != nullptr) {
+            if (record->GetTimestamp() <= backup_ts) break;
             record =
                 pmem_allocator_->offset2addr<StringRecord>(record->old_version);
           }
@@ -428,7 +429,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         }
         case RecordType::SortedRecord: {
           DLRecord* header = slot_iter->GetIndex().skiplist->HeaderRecord();
-          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+          while (header != nullptr) {
+            if (header->GetTimestamp() <= backup_ts) break;
             header =
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
@@ -458,7 +460,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         }
         case RecordType::HashRecord: {
           DLRecord* header = slot_iter->GetIndex().hlist->HeaderRecord();
-          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+          while (header != nullptr) {
+            if (header->GetTimestamp() <= backup_ts) break;
             header =
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
@@ -487,7 +490,8 @@ Status KVEngine::Backup(const pmem::obj::string_view backup_log,
         }
         case RecordType::ListRecord: {
           DLRecord* header = slot_iter->GetIndex().list->HeaderRecord();
-          while (header != nullptr && header->GetTimestamp() > backup_ts) {
+          while (header != nullptr) {
+            if (header->GetTimestamp() <= backup_ts) break;
             header =
                 pmem_allocator_->offset2addr<DLRecord>(header->old_version);
           }
@@ -838,7 +842,7 @@ Status KVEngine::checkConfigs(const Configs& configs) {
   if (configs.pmem_file_size % segment_size != 0) {
     GlobalLogger.Error(
         "pmem file size should align to segment "
-        "size(pmem_segment_blocks*pmem_block_size) (%d bytes)\n",
+        "size(pmem_segment_blocks*pmem_block_size) (%lu bytes)\n",
         segment_size);
     return Status::InvalidConfiguration;
   }
@@ -1162,6 +1166,7 @@ Status KVEngine::batchWriteRollbackLogs() {
                        strerror(errno));
     return Status::IOError;
   }
+  defer(closedir(dir));
   dirent* entry;
   while ((entry = readdir(dir)) != NULL) {
     std::string fname = std::string{entry->d_name};
@@ -1219,7 +1224,6 @@ Status KVEngine::batchWriteRollbackLogs() {
       return Status::PMemMapFileError;
     }
   }
-  closedir(dir);
   std::string cmd{"rm -rf " + batch_log_dir_ + "*"};
   [[gnu::unused]] int ret = system(cmd.c_str());
 
@@ -1432,7 +1436,8 @@ T* KVEngine::removeOutDatedVersion(T* record, TimestampType min_snapshot_ts) {
       "Invalid record type, should be StringRecord or DLRecord.");
   T* ret = nullptr;
   auto old_record = record;
-  while (old_record && old_record->GetTimestamp() > min_snapshot_ts) {
+  while (old_record) {
+    if (old_record->GetTimestamp() <= min_snapshot_ts) break;
     old_record =
         static_cast<T*>(pmem_allocator_->offset2addr(old_record->old_version));
   }

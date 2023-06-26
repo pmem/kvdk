@@ -154,8 +154,8 @@ void SortedIteratorExample(KVDKEngine* kvdk_engine) {
   assert(s == Ok);
   for (int i = 0; i < 10; ++i) {
     char key[10] = "key", value[10] = "value";
-    strcat(key, nums[i]);
-    strcat(value, nums[i]);
+    strncat(key, nums[i], 1);
+    strncat(value, nums[i], 1);
     s = KVDKSortedPut(kvdk_engine, sorted_collection, strlen(sorted_collection),
                       key, strlen(key), value, strlen(value));
     assert(s == Ok);

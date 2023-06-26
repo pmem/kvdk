@@ -101,7 +101,10 @@ class VersionController {
     }
     ~LocalSnapshotHolder() {
       if (owner_ != nullptr) {
-        owner_->ReleaseLocalSnapshot();
+        try {
+          owner_->ReleaseLocalSnapshot();
+        } catch (std::exception& err) {
+        }
       }
     }
     TimestampType Timestamp() { return ts_; }
@@ -162,10 +165,14 @@ class VersionController {
     }
     ~BatchWriteToken() {
       if (owner_ != nullptr) {
-        auto& tc =
-            owner_->version_thread_cache_[ThreadManager::ThreadID() %
+        try {
+          auto& tc =
+              owner_
+                  ->version_thread_cache_[ThreadManager::ThreadID() %
                                           owner_->version_thread_cache_.size()];
-        tc.batch_write_ts = kMaxTimestamp;
+          tc.batch_write_ts = kMaxTimestamp;
+        } catch (std::exception& err) {
+        }
       }
     }
     TimestampType Timestamp() { return ts_; }
@@ -311,8 +318,8 @@ class VersionController {
   // These two used to get current timestamp of the instance
   // version_base_: The newest timestamp on instance closing last time
   // tsc_on_startup_: The CPU tsc on instance start up
-  uint64_t base_timestamp_;
-  uint64_t tsc_on_startup_;
+  uint64_t base_timestamp_{0};
+  uint64_t tsc_on_startup_{0};
 };
 
 class CheckPoint {

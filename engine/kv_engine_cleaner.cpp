@@ -737,13 +737,15 @@ double Cleaner::SearchOutdatedCollections() {
                            outdated_collections_.lists.size() +
                            outdated_collections_.skiplists.size());
 
-  double diff_size_ratio =
-      (after_queue_size - before_queue_size) / max_thread_num_;
-  if (diff_size_ratio > 0) {
-    outdated_collections_.increase_ratio =
-        outdated_collections_.increase_ratio == 0
-            ? diff_size_ratio
-            : diff_size_ratio / outdated_collections_.increase_ratio;
+  if (max_thread_num_ > 0) {
+    double diff_size_ratio =
+        (double)(after_queue_size - before_queue_size) / max_thread_num_;
+    if (diff_size_ratio > 0) {
+      outdated_collections_.increase_ratio =
+          outdated_collections_.increase_ratio == 0
+              ? diff_size_ratio
+              : diff_size_ratio / outdated_collections_.increase_ratio;
+    }
   }
   return outdated_collections_.increase_ratio;
 }

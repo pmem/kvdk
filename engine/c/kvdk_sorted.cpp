@@ -26,9 +26,6 @@ KVDKStatus KVDKSortedCreate(KVDKEngine* engine, const char* collection_name,
                             KVDKSortedCollectionConfigs* configs) {
   KVDKStatus s = engine->rep->SortedCreate(
       StringView(collection_name, collection_len), configs->rep);
-  if (s != KVDKStatus::Ok) {
-    return s;
-  }
   return s;
 }
 

@@ -29,6 +29,7 @@ class CollectionTransactionCV {
 
     TransactionToken(const TransactionToken&) = delete;
     TransactionToken(TransactionToken&&) = delete;
+    TransactionToken& operator=(const TransactionToken& rhs) = delete;
 
     ~TransactionToken() { cv_->FinishTransaction(); }
 
@@ -46,6 +47,7 @@ class CollectionTransactionCV {
 
     CollectionToken(const CollectionToken&) = delete;
     CollectionToken(CollectionToken&&) = delete;
+    CollectionToken& operator=(const CollectionToken& rhs) = delete;
 
    private:
     CollectionTransactionCV* cv_;
@@ -54,6 +56,9 @@ class CollectionTransactionCV {
   CollectionTransactionCV() = default;
 
   CollectionTransactionCV(const CollectionTransactionCV&) = delete;
+
+  CollectionTransactionCV& operator=(const CollectionTransactionCV& rhs) =
+      delete;
 
   void AcquireTransaction() {
     std::unique_lock<SpinMutex> ul(spin_);

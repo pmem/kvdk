@@ -14,7 +14,7 @@ constexpr int64_t kLockTimeoutMicrosecondsMin = 5000;
 constexpr int64_t kLockTimeoutMicrosecondsMax = 15000;
 
 TransactionImpl::TransactionImpl(KVEngine* engine)
-    : engine_(engine), timeout_(randomTimeout()) {
+    : engine_(engine), status_(Status::Ok), timeout_(randomTimeout()) {
   kvdk_assert(engine_ != nullptr, "");
   batch_.reset(
       dynamic_cast<WriteBatchImpl*>(engine_->WriteBatchCreate().release()));

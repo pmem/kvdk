@@ -169,6 +169,9 @@ void DBWrite(int tid) {
   std::unique_ptr<WriteBatch> batch;
   if (engine != nullptr) {
     batch = engine->WriteBatchCreate();
+    if (batch == nullptr) return;
+  } else {
+    return;
   }
 
   for (size_t operations = 0; operations < operations_per_thread;
@@ -501,7 +504,7 @@ int main(int argc, char** argv) {
     if (s != Status::Ok) {
       throw std::runtime_error{
           std::string{"Fail to open KVDK instance. Status: "} +
-          KVDKStatusStrings[static_cast<int>(s)]};
+          ((s <= Status::Unknown) ? KVDKStatusStrings[s] : "")};
     }
   }
 
@@ -528,7 +531,7 @@ int main(int argc, char** argv) {
   switch (bench_data_type) {
     case DataType::Sorted: {
       printf("Create %ld Sorted Collections\n", FLAGS_num_collection);
-      for (auto col : collections) {
+      for (auto& col : collections) {
         SortedCollectionConfigs s_configs;
         Status s = engine->SortedCreate(col, s_configs);
         if (s != Status::Ok && s != Status::Existed) {
@@ -538,7 +541,7 @@ int main(int argc, char** argv) {
       break;
     }
     case DataType::Hashes: {
-      for (auto col : collections) {
+      for (auto& col : collections) {
         Status s = engine->HashCreate(col);
         if (s != Status::Ok && s != Status::Existed) {
           throw std::runtime_error{"Fail to create Hashset"};
@@ -547,7 +550,7 @@ int main(int argc, char** argv) {
       break;
     }
     case DataType::List: {
-      for (auto col : collections) {
+      for (auto& col : collections) {
         Status s = engine->ListCreate(col);
         if (s != Status::Ok && s != Status::Existed) {
           throw std::runtime_error{"Fail to create List"};

@@ -34,7 +34,7 @@ class List : public Collection {
    private:
     friend List;
     std::vector<std::deque<DLRecord*>::iterator> to_pop_{};
-    TimestampType timestamp_;
+    TimestampType timestamp_{0};
   };
 
   struct PushNArgs {

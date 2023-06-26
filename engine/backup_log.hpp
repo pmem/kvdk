@@ -78,6 +78,7 @@ class BackupLog {
 
   BackupLog() = default;
   BackupLog(const BackupLog&) = delete;
+  BackupLog& operator=(const BackupLog& rhs) = delete;
 
   // Init a new backup log
   Status Init(const std::string& backup_log) {
@@ -141,7 +142,7 @@ class BackupLog {
       file_size_ = lseek(fd_, 0, SEEK_END);
       if (file_size_ < sizeof(BackupStage)) {
         GlobalLogger.Error(
-            "Open backup log file %s error: file size %lu smaller than "
+            "Open backup log file %lu error: file size %lu smaller than "
             "persisted "
             "stage flag",
             backup_log.size(), file_size_);
@@ -207,7 +208,7 @@ class BackupLog {
 
   // Close backup log file
   void Close() {
-    if (log_file_ != nullptr) {
+    if (log_file_ != nullptr && file_size_ > 0) {
       munmap(log_file_, file_size_);
     }
     if (fd_ >= 0) {
@@ -224,7 +225,9 @@ class BackupLog {
   // Destroy backup log file
   void Destroy() {
     Close();
-    remove(file_name_.c_str());
+    if (remove(file_name_.c_str()) == -1) {
+      GlobalLogger.Error("Fail to remove file %s\n", file_name_.c_str());
+    }
   }
 
  private:
@@ -272,7 +275,7 @@ class BackupLog {
   std::string file_name_{};
   std::string delta_{};
   void* log_file_{nullptr};
-  size_t file_size_{0};
+  uint64_t file_size_{0};
   int fd_{-1};
   BackupStage stage_{BackupStage::NotFinished};
 };

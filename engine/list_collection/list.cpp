@@ -310,7 +310,7 @@ List::PushNArgs List::PreparePushN(ListPos pos,
       SpaceEntry space =
           pmem_allocator_->Allocate(DLRecord::RecordSize(internal_key, elem));
       if (space.size == 0) {
-        GlobalLogger.Error("Try allocate %lu error\n",
+        GlobalLogger.Error("Try allocate %u error\n",
                            DLRecord::RecordSize(internal_key, elem));
         for (auto& sp : args.spaces) {
           pmem_allocator_->Free(sp);

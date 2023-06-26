@@ -659,6 +659,7 @@ class KVEngine : public Engine {
   struct BackgroundWorkSignals {
     BackgroundWorkSignals() = default;
     BackgroundWorkSignals(const BackgroundWorkSignals&) = delete;
+    BackgroundWorkSignals& operator=(const BackgroundWorkSignals& rhs) = delete;
 
     std::condition_variable_any pmem_usage_reporter_cv;
     std::condition_variable_any pmem_allocator_organizer_cv;

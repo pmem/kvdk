@@ -112,17 +112,17 @@ add_executable(bench benchmark/bench.cpp)
 target_link_libraries(bench PUBLIC engine)
 target_include_directories(bench PUBLIC ./include ./extern ./)
 
-option(BUILD_TESTING "Build the tests" ON)
+option(BUILD_TESTING "Build the tests" OFF)
 if (BUILD_TESTING)
     add_subdirectory(${CMAKE_SOURCE_DIR}/extern/gtest)
     add_subdirectory(tests)
 endif ()
 
 
-option(BUILD_TUTORIAL "Build the tutorial" ON)
+option(BUILD_TUTORIAL "Build the tutorial" OFF)
 add_subdirectory(examples/tutorial)
 
-option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" ON)
+option(BUILD_GRAPH_SIMULATOR "Build the graph simulator" OFF)
 add_subdirectory(examples/graph_sim)
 
 add_custom_target(checkers ALL)

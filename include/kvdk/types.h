@@ -71,7 +71,8 @@ __attribute__((unused)) static char const* KVDKValueTypeString[] = {
   GEN(InvalidConfiguration) \
   GEN(Fail)                 \
   GEN(Timeout)              \
-  GEN(Abort)
+  GEN(Abort)                \
+  GEN(Unknown)
 
 typedef enum { KVDK_STATUS(GENERATE_ENUM) } KVDKStatus;
 

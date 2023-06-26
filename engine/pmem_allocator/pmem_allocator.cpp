@@ -82,13 +82,13 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
 
     if (!is_pmem) {
       GlobalLogger.Error("%s is not a pmem path\n", pmem_file.c_str());
+      pmem_unmap(pmem, mapped_size);
       return nullptr;
     }
   } else {
     if (!checkDevDaxAndGetSize(pmem_file.c_str(), &mapped_size)) {
-      GlobalLogger.Error(
-          "checkDevDaxAndGetSize %s failed device %s faild: %s\n",
-          pmem_file.c_str(), strerror(errno));
+      GlobalLogger.Error("checkDevDaxAndGetSize device %s faild: %s\n",
+                         pmem_file.c_str(), strerror(errno));
       return nullptr;
     }
 
@@ -108,10 +108,19 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
     }
   }
 
+  auto unmap_pmem = [&]() {
+    if (!use_devdax_mode) {
+      pmem_unmap(pmem, mapped_size);
+    } else {
+      munmap(pmem, pmem_size);
+    }
+  };
+
   if (mapped_size != pmem_size) {
     GlobalLogger.Error(
         "Pmem map file %s size %lu is not same as expected %lu\n",
         pmem_file.c_str(), mapped_size, pmem_size);
+    unmap_pmem();
     return nullptr;
   }
 
@@ -121,6 +130,7 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
     GlobalLogger.Error(
         "pmem file too small, should larger than pmem_segment_blocks * "
         "pmem_block_size * max_access_threads\n");
+    unmap_pmem();
     return nullptr;
   }
 
@@ -133,6 +143,7 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
         "Pmem file size not aligned with segment size, pmem file size is %llu, "
         "segment_size is %llu\n",
         pmem_size, block_size * num_segment_blocks);
+    unmap_pmem();
     return nullptr;
   }
 
@@ -146,6 +157,7 @@ PMEMAllocator* PMEMAllocator::NewPMEMAllocator(
   } catch (std::bad_alloc& err) {
     GlobalLogger.Error("Error while initialize PMEMAllocator: %s\n",
                        err.what());
+    unmap_pmem();
     return nullptr;
   }
 

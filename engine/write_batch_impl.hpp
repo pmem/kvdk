@@ -328,7 +328,7 @@ class BatchWriteLog {
 
  private:
   Stage stage{Stage::Initializing};
-  TimestampType timestamp_;
+  TimestampType timestamp_{0};
   StringLog string_logs_;
   SortedLog sorted_logs_;
   HashLog hash_logs_;

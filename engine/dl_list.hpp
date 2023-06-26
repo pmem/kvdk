@@ -39,6 +39,8 @@ class DLList {
 
     WriteArgs(WriteArgs&& args) = delete;
 
+    WriteArgs& operator=(const WriteArgs& rhs) = delete;
+
     StringView key;
     StringView val;
     RecordType type;
@@ -197,7 +199,8 @@ class DLListDataIterator {
   DLRecord* findValidVersion(DLRecord* pmem_record) {
     DLRecord* curr = pmem_record;
     TimestampType ts = snapshot_->GetTimestamp();
-    while (curr != nullptr && curr->GetTimestamp() > ts) {
+    while (curr != nullptr) {
+      if (curr->GetTimestamp() <= ts) break;
       curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");

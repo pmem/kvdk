@@ -19,7 +19,7 @@
 * C/C++/Java APIs
 
 # Limitations
-*  The maximum supported key-value size is 64KB-4GB.
+*  The maximum supported key-value size is 64KB-4GB according to configs.
 *  No approach to key-value compression.
 *  Users can't expand the persistent memory space on the fly.
 

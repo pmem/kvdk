@@ -48,6 +48,10 @@ struct SortedWriteArgs {
  * */
 struct SkiplistNode {
  public:
+  SkiplistNode(const SkiplistNode&) = delete;
+  SkiplistNode& operator=(const SkiplistNode&) = delete;
+  SkiplistNode(SkiplistNode&&) = delete;
+
   enum class NodeStatus : uint8_t {
     Normal = 0,
     Deleted = 1,
@@ -186,6 +190,10 @@ class Skiplist : public Collection {
            Comparator comparator, PMEMAllocator* pmem_allocator,
            HashTable* hash_table, LockTable* lock_table,
            bool index_with_hashtable);
+
+  Skiplist(const Skiplist& s) = delete;
+  Skiplist& operator=(const Skiplist& s) = delete;
+  Skiplist(Skiplist&& s) = delete;
 
   ~Skiplist() final;
 
@@ -524,8 +532,8 @@ class Skiplist : public Collection {
 struct Splice {
   // Seeking skiplist
   Skiplist* seeking_list;
-  std::array<SkiplistNode*, kMaxHeight + 1> nexts;
-  std::array<SkiplistNode*, kMaxHeight + 1> prevs;
+  std::array<SkiplistNode*, kMaxHeight + 1> nexts{nullptr};
+  std::array<SkiplistNode*, kMaxHeight + 1> prevs{nullptr};
   DLRecord* prev_pmem_record{nullptr};
   DLRecord* next_pmem_record{nullptr};
 

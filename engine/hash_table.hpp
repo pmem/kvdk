@@ -129,16 +129,18 @@ class HashTable {
     HashEntry* entry_ptr{nullptr};
 
     LookupResult& operator=(LookupResult const& other) {
-      s = other.s;
-      memcpy_16(&entry, &other.entry);
-      entry_ptr = other.entry_ptr;
-      key_hash_prefix = other.key_hash_prefix;
+      if (&other != this) {
+        s = other.s;
+        memcpy_16(&entry, &other.entry);
+        entry_ptr = other.entry_ptr;
+        key_hash_prefix = other.key_hash_prefix;
+      }
       return *this;
     }
 
    private:
     friend class HashTable;
-    uint32_t key_hash_prefix;
+    uint32_t key_hash_prefix{0};
   };
 
   static HashTable* NewHashTable(uint64_t hash_bucket_num,
@@ -254,7 +256,6 @@ class HashTable {
   Array<Slot> slots_;
   std::vector<uint64_t> hash_bucket_entries_;
   Array<HashBucket> hash_buckets_;
-  void* main_buckets_;
 };
 
 // Iterator all hash entries in a hash table bucket

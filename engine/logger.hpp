@@ -28,7 +28,7 @@ class Logger {
   void Log(const char* log_type, const char* format, va_list& args);
 
   FILE* log_file_ = NULL;
-  LogLevel level_;
+  LogLevel level_{LogLevel::None};
   std::mutex mut_;
 
   std::chrono::time_point<std::chrono::system_clock> start_ts_;

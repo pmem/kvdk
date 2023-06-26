@@ -21,7 +21,7 @@ HashTable* HashTable::NewHashTable(uint64_t hash_bucket_num,
     table = new HashTable(hash_bucket_num, num_buckets_per_slot, pmem_allocator,
                           max_access_threads);
   } catch (std::bad_alloc& b) {
-    GlobalLogger.Error("No enough dram to create global hash table: b\n",
+    GlobalLogger.Error("No enough dram to create global hash table: %s\n",
                        b.what());
     table = nullptr;
   }
@@ -80,7 +80,7 @@ bool HashEntry::Match(const StringView& key, uint32_t hash_k_prefix,
       }
     }
 
-    if (data_entry_metadata != nullptr) {
+    if (data_entry_metadata != nullptr && pmem_record != nullptr) {
       memcpy(data_entry_metadata, pmem_record, sizeof(DataEntry));
     }
 

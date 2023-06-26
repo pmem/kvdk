@@ -171,8 +171,8 @@ class Cleaner {
     }
 
    private:
-    bool keep_work_;
-    bool join_;
+    bool keep_work_{false};
+    bool join_{false};
     std::condition_variable_any cv;
     SpinMutex spin;
     std::thread worker_thread;
@@ -181,8 +181,8 @@ class Cleaner {
 
   KVEngine* kv_engine_;
 
-  size_t max_thread_num_;
-  size_t min_thread_num_;
+  size_t max_thread_num_{1};
+  size_t min_thread_num_{1};
   std::atomic<bool> close_;
   std::atomic<int64_t> start_slot_;
   std::atomic<size_t> active_clean_workers_;

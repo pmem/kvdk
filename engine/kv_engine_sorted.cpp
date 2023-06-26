@@ -36,7 +36,7 @@ Status KVEngine::buildSkiplist(const StringView& collection_name,
     auto comparator = comparators_.GetComparator(s_configs.comparator_name);
     if (comparator == nullptr) {
       GlobalLogger.Error("Compare function %s is not registered\n",
-                         s_configs.comparator_name);
+                         s_configs.comparator_name.c_str());
       return Status::Abort;
     }
     CollectionIDType id = collection_id_.fetch_add(1);

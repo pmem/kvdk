@@ -34,12 +34,16 @@ class ChunkBasedAllocator : Allocator {
       : dalloc_thread_cache_(max_access_threads) {}
   ChunkBasedAllocator(ChunkBasedAllocator const&) = delete;
   ChunkBasedAllocator(ChunkBasedAllocator&&) = delete;
+  ChunkBasedAllocator& operator=(const ChunkBasedAllocator& rhs) = delete;
   ~ChunkBasedAllocator() {
-    for (uint64_t i = 0; i < dalloc_thread_cache_.size(); i++) {
-      auto& tc = dalloc_thread_cache_[i];
-      for (void* chunk : tc.allocated_chunks) {
-        free(chunk);
+    try {
+      for (uint64_t i = 0; i < dalloc_thread_cache_.size(); i++) {
+        auto& tc = dalloc_thread_cache_[i];
+        for (void* chunk : tc.allocated_chunks) {
+          free(chunk);
+        }
       }
+    } catch (std::exception& err) {
     }
   }
 
@@ -52,6 +56,7 @@ class ChunkBasedAllocator : Allocator {
     DAllocThreadCache() = default;
     DAllocThreadCache(const DAllocThreadCache&) = delete;
     DAllocThreadCache(DAllocThreadCache&&) = delete;
+    DAllocThreadCache& operator=(const DAllocThreadCache& rhs) = delete;
   };
 
   const uint32_t chunk_size_ = (1 << 20);

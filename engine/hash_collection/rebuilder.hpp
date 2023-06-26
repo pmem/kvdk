@@ -234,8 +234,8 @@ class HashListRebuilder {
 
     CollectionIDType id = HashList::FetchID(pmem_record);
     DLRecord* curr = pmem_record;
-    while (curr != nullptr &&
-           curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
+    while (curr != nullptr) {
+      if (curr->GetTimestamp() <= checkpoint_.CheckpointTS()) break;
       curr = pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
       kvdk_assert(curr == nullptr || curr->Validate(),
                   "Broken checkpoint: invalid older version sorted record");
@@ -353,7 +353,7 @@ class HashListRebuilder {
       invalid_hlists_;
   std::unordered_map<CollectionIDType, std::shared_ptr<HashList>>
       rebuild_hlists_;
-  CollectionIDType max_recovered_id_;
+  CollectionIDType max_recovered_id_{0};
 
   // We manually allocate recovery thread id for no conflict in multi-thread
   // recovering

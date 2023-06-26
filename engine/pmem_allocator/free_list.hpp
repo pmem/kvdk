@@ -179,7 +179,8 @@ class Freelist {
         block_size_(block_size),
         max_small_entry_block_size_(max_small_entry_b_size),
         max_block_size_index_(std::min(
-            kMaxBlockSizeIndex, blockSizeIndex(num_segment_blocks_) + 1)),
+            kMaxBlockSizeIndex,
+            blockSizeIndex(num_segment_blocks_, kMaxBlockSizeIndex) + 1)),
         active_pool_(max_small_entry_b_size, max_block_size_index_),
         merged_pool_(max_small_entry_b_size, max_block_size_index_),
         space_map_(num_blocks),
@@ -240,6 +241,7 @@ class Freelist {
     FlistThreadCache() = delete;
     FlistThreadCache(FlistThreadCache&&) = delete;
     FlistThreadCache(const FlistThreadCache&) = delete;
+    FlistThreadCache& operator=(const FlistThreadCache& rhs) = delete;
 
     // Offsets of small free space entries whose block size smaller than
     // max_small_entry_b_size. Array index indicates block size of entries
@@ -260,12 +262,16 @@ class Freelist {
   };
 
   uint32_t blockSizeIndex(uint32_t block_size) {
+    return blockSizeIndex(block_size, max_block_size_index_);
+  }
+
+  uint32_t blockSizeIndex(uint32_t block_size, uint32_t max_block_size_index) {
     kvdk_assert(block_size <= num_segment_blocks_, "");
     uint32_t ret = block_size < max_small_entry_block_size_
                        ? 0
                        : (block_size - max_small_entry_block_size_) /
                              kBlockSizeIndexInterval;
-    return std::min(ret, max_block_size_index_ - 1);
+    return std::min(ret, max_block_size_index - 1);
   }
 
   bool getSmallEntry(uint32_t size, SpaceEntry* space_entry);

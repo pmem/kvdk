@@ -552,6 +552,7 @@ Status SortedCollectionRebuilder::rebuildSkiplistIndex(Skiplist* skiplist) {
         }
 
         if (s != Status::Ok) {
+          SkiplistNode::DeleteNode(dram_node);
           return s;
         }
       }
@@ -623,7 +624,7 @@ Status SortedCollectionRebuilder::insertHashIndex(const StringView& key,
                                                   PointerType index_type) {
   // TODO: ttl
   RecordType record_type = RecordType::Empty;
-  RecordStatus record_status;
+  RecordStatus record_status = {};
   if (index_type == PointerType::DLRecord) {
     record_type = RecordType::SortedElem;
     record_status = static_cast<DLRecord*>(index_ptr)->GetRecordStatus();
@@ -682,7 +683,8 @@ DLRecord* SortedCollectionRebuilder::findCheckpointVersion(
   }
   CollectionIDType id = Skiplist::FetchID(pmem_record);
   DLRecord* curr = pmem_record;
-  while (curr != nullptr && curr->GetTimestamp() > checkpoint_.CheckpointTS()) {
+  while (curr != nullptr) {
+    if (curr->GetTimestamp() <= checkpoint_.CheckpointTS()) break;
     curr =
         kv_engine_->pmem_allocator_->offset2addr<DLRecord>(curr->old_version);
 
